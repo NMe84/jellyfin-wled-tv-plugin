@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WLED TV</title>
+</head>
+<body>
+
+<div id="WledTvConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+
+    <div class="content-primary">
+        <div class="verticalSection verticalSection-extrabottompadding">
+            <div class="sectionTitleContainer padded-left padded-right" style="margin-bottom:1em;">
+                <h2 class="sectionTitle">WLED TV — Edge Lighting</h2>
+            </div>
+
+            <div id="wledBanner" class="padded-left padded-right" style="display:none;margin-bottom:1em;font-size:.9em;"></div>
+
+            <form id="wledConfigForm" class="padded-left padded-right">
+
+                <!-- Enable / disable -->
+                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:1.5em;">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="chkEnabled" is="emby-checkbox" class="emby-checkbox">
+                        <span>Enable edge lighting during playback</span>
+                    </label>
+                </div>
+
+                <!-- WLED API URL -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtWledUrl">WLED controller URL</label>
+                    <input type="text" id="txtWledUrl" is="emby-input" class="emby-input"
+                           placeholder="http://192.168.1.50" autocomplete="off">
+                    <div class="fieldDescription">Base URL of the WLED HTTP JSON API. No trailing slash.</div>
+                </div>
+
+                <!-- LED counts -->
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div class="inputContainer" style="flex:1;min-width:140px;">
+                        <label class="inputLabel inputLabelUnfocused" for="numHLeds">Horizontal LEDs</label>
+                        <input type="number" id="numHLeds" is="emby-input" class="emby-input"
+                               min="2" max="512" step="1">
+                        <div class="fieldDescription">LEDs on the top and bottom edges.</div>
+                    </div>
+                    <div class="inputContainer" style="flex:1;min-width:140px;">
+                        <label class="inputLabel inputLabelUnfocused" for="numVLeds">Vertical LEDs</label>
+                        <input type="number" id="numVLeds" is="emby-input" class="emby-input"
+                               min="2" max="512" step="1">
+                        <div class="fieldDescription">LEDs on the left and right edges.</div>
+                    </div>
+                    <div class="inputContainer" style="flex:1;min-width:140px;">
+                        <label class="inputLabel inputLabelUnfocused" for="numLedsPerMeter">LEDs per metre</label>
+                        <input type="number" id="numLedsPerMeter" is="emby-input" class="emby-input"
+                               min="1" max="144" step="1">
+                    </div>
+                </div>
+
+                <!-- Loop start -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="selLoopStart">Strip start position</label>
+                    <select id="selLoopStart" is="emby-select" class="emby-select">
+                        <option value="0">Bottom centre (clockwise)</option>
+                        <option value="1">Bottom left (clockwise)</option>
+                        <option value="2">Bottom right (clockwise)</option>
+                    </select>
+                    <div class="fieldDescription">Where LED #0 is physically located on the strip.</div>
+                </div>
+
+                <!-- Sample depth -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="numSampleDepth">
+                        Sample depth (<span id="lblSampleDepth">8</span>%)
+                    </label>
+                    <input type="range" id="numSampleDepth" min="2" max="25" step="1"
+                           style="width:100%;">
+                    <div class="fieldDescription">How far from each screen edge to sample (percentage of frame dimension).</div>
+                </div>
+
+                <!-- Brightness -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="numBrightness">
+                        Brightness (<span id="lblBrightness">128</span> / 255)
+                    </label>
+                    <input type="range" id="numBrightness" min="0" max="255" step="1"
+                           style="width:100%;">
+                </div>
+
+                <!-- Update rate -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="numIntervalMs">Update interval (ms)</label>
+                    <input type="number" id="numIntervalMs" is="emby-input" class="emby-input"
+                           min="40" max="1000" step="10">
+                    <div class="fieldDescription">Time between colour updates. 100 ms = 10 fps. Minimum ~40 ms (25 fps).</div>
+                </div>
+
+                <!-- LED count summary -->
+                <p style="margin:.5em 0 1.5em;font-size:.85em;color:#888;">
+                    Total LEDs: <strong id="lblTotal">0</strong>
+                    &nbsp;·&nbsp; Strip length: <strong id="lblLength">0</strong> m
+                </p>
+
+                <!-- Actions -->
+                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:1em;">
+                    <button type="submit" class="raised button-submit emby-button">Save</button>
+                    <button type="button" id="btnTest" class="raised emby-button">Test connection</button>
+                </div>
+
+                <div id="wledTestResult" style="margin-top:12px;font-size:.85em;display:none;"></div>
+
+            </form>
+        </div>
+    </div>
+
+</div><!-- #WledTvConfigPage -->
+
+<script type="text/javascript">
+'use strict';
+(function () {
+
+    var PLUGIN_ID = 'a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1';
+
+    function getBase() {
+        return window.ApiClient ? window.ApiClient.serverAddress() : window.location.origin;
+    }
+    function authHeaders() {
+        var t = window.ApiClient ? window.ApiClient.accessToken() : '';
+        return { 'Authorization': 'MediaBrowser Token="' + t + '"', 'Content-Type': 'application/json' };
+    }
+    function apiFetch(path, opts) {
+        opts = opts || {};
+        opts.headers = authHeaders();
+        return fetch(getBase() + path, opts).then(function (r) {
+            if (!r.ok) return r.text().then(function (t) { throw new Error(t); });
+            if (r.status === 204) return null;
+            return r.json();
+        });
+    }
+
+    // ── UI references ────────────────────────────────────────────────────────
+    var banner   = document.getElementById('wledBanner');
+    var form     = document.getElementById('wledConfigForm');
+    var chkEn    = document.getElementById('chkEnabled');
+    var txtUrl   = document.getElementById('txtWledUrl');
+    var numH     = document.getElementById('numHLeds');
+    var numV     = document.getElementById('numVLeds');
+    var numLpm   = document.getElementById('numLedsPerMeter');
+    var selStart = document.getElementById('selLoopStart');
+    var rngDepth = document.getElementById('numSampleDepth');
+    var rngBri   = document.getElementById('numBrightness');
+    var numMs    = document.getElementById('numIntervalMs');
+    var lblDepth = document.getElementById('lblSampleDepth');
+    var lblBri   = document.getElementById('lblBrightness');
+    var lblTotal = document.getElementById('lblTotal');
+    var lblLen   = document.getElementById('lblLength');
+    var btnTest  = document.getElementById('btnTest');
+    var testOut  = document.getElementById('wledTestResult');
+
+    // ── Live labels ──────────────────────────────────────────────────────────
+    function updateSummary() {
+        var h = parseInt(numH.value) || 0;
+        var v = parseInt(numV.value) || 0;
+        var lpm = parseInt(numLpm.value) || 60;
+        lblTotal.textContent = 2 * h + 2 * v;
+        lblLen.textContent   = ((2 * h + 2 * v) / lpm).toFixed(1);
+    }
+    rngDepth.addEventListener('input', function () { lblDepth.textContent = rngDepth.value; });
+    rngBri.addEventListener('input',   function () { lblBri.textContent   = rngBri.value; });
+    numH.addEventListener('input',   updateSummary);
+    numV.addEventListener('input',   updateSummary);
+    numLpm.addEventListener('input', updateSummary);
+
+    // ── Banner helpers ───────────────────────────────────────────────────────
+    function showBanner(msg, ok) {
+        banner.textContent = msg;
+        banner.style.color   = ok ? '#00a4dc' : '#f44336';
+        banner.style.display = 'block';
+        setTimeout(function () { banner.style.display = 'none'; }, 4000);
+    }
+
+    // ── Load config ──────────────────────────────────────────────────────────
+    function loadConfig() {
+        apiFetch('/Plugins/' + PLUGIN_ID + '/Configuration')
+        .then(function (cfg) {
+            chkEn.checked        = cfg.Enabled !== false;
+            txtUrl.value         = cfg.WledUrl         || '';
+            numH.value           = cfg.HorizontalLedCount || 32;
+            numV.value           = cfg.VerticalLedCount   || 18;
+            numLpm.value         = cfg.LedsPerMeter       || 60;
+            selStart.value       = String(cfg.LoopStart   || 0);
+            rngDepth.value       = Math.round((cfg.SampleDepth || 0.08) * 100);
+            rngBri.value         = cfg.Brightness          || 128;
+            numMs.value          = cfg.UpdateIntervalMs    || 100;
+            lblDepth.textContent = rngDepth.value;
+            lblBri.textContent   = rngBri.value;
+            updateSummary();
+        })
+        .catch(function (e) { showBanner('Failed to load configuration: ' + e.message, false); });
+    }
+
+    // ── Save config ──────────────────────────────────────────────────────────
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var cfg = {
+            Enabled:            chkEn.checked,
+            WledUrl:            txtUrl.value.trim(),
+            HorizontalLedCount: parseInt(numH.value),
+            VerticalLedCount:   parseInt(numV.value),
+            LedsPerMeter:       parseInt(numLpm.value),
+            LoopStart:          parseInt(selStart.value),
+            SampleDepth:        parseInt(rngDepth.value) / 100,
+            Brightness:         parseInt(rngBri.value),
+            UpdateIntervalMs:   parseInt(numMs.value)
+        };
+        apiFetch('/Plugins/' + PLUGIN_ID + '/Configuration', {
+            method: 'POST',
+            body: JSON.stringify(cfg)
+        })
+        .then(function () { showBanner('Configuration saved.', true); })
+        .catch(function (e) { showBanner('Save failed: ' + e.message, false); });
+    });
+
+    // ── Test connection ──────────────────────────────────────────────────────
+    btnTest.addEventListener('click', function () {
+        testOut.textContent = 'Testing…';
+        testOut.style.display = 'block';
+        apiFetch('/WledTv/test')
+        .then(function (r) {
+            testOut.style.color = r.success ? '#27ae60' : '#f44336';
+            testOut.textContent = r.success
+                ? 'Connected! WLED responded with HTTP ' + r.status + '.'
+                : 'Failed (HTTP ' + r.status + '): ' + r.body;
+        })
+        .catch(function (e) {
+            testOut.style.color = '#f44336';
+            testOut.textContent = 'Error: ' + e.message;
+        });
+    });
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    document.addEventListener('pageshow', function (e) {
+        if (e.target.id !== 'WledTvConfigPage') return;
+        loadConfig();
+    });
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.html      text eol=lf
+*.md        text eol=lf
+*.gitignore text eol=lf
+*.dll       binary
+*.pdb       binary
