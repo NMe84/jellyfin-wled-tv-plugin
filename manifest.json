@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix: config page not saving; dark mode dropdown\n\n- Configuration now saves and loads correctly\n- Strip start position dropdown styled for dark mode",
+        "checksum": "83cb67f7c4cf237a5b2c13c12cd27fe0",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.2.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-02T22:55:20Z",
+        "version": "0.0.2.0"
+      },
+      {
         "changelog": "Initial release",
         "checksum": "24b7e79c33a51ebbdb882da3110dd9cc",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.1.0/Jellyfin.Plugin.WledTv.zip",
