@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  release:
+    types: [ published ]
+
+permissions:
+  contents: write   # required to upload assets and push to gh-pages
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Extract version from build.yaml
+        id: ver
+        run: |
+          VERSION=$(grep '^version:' build.yaml | grep -oP '"[^"]+"' | tr -d '"')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Baking version $VERSION into assembly"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: |
+          dotnet build --configuration Release --no-restore \
+            /p:Version=${{ steps.ver.outputs.version }} \
+            /p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+            /p:FileVersion=${{ steps.ver.outputs.version }}
+
+      - name: Package
+        run: |
+          cd Jellyfin.Plugin.WledTv/bin/Release/net9.0
+          zip Jellyfin.Plugin.WledTv.zip Jellyfin.Plugin.WledTv.dll
+          md5sum Jellyfin.Plugin.WledTv.zip | awk '{print $1}' > Jellyfin.Plugin.WledTv.zip.md5
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "Jellyfin.Plugin.WledTv/bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip" \
+            "Jellyfin.Plugin.WledTv/bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip.md5" \
+            "build.yaml"
+
+      - name: Regenerate manifest
+        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          pagesBranch: gh-pages
+          pagesFile: manifest.json
+          ignorePrereleases: true
+
+      - name: Trigger jellyfin-plugins aggregator
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.MANIFEST_REPO_PAT }}
+          repository: NMe84/jellyfin-plugins
+          event-type: plugin-released
