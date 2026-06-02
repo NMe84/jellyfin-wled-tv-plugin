@@ -57,7 +57,8 @@
                 <!-- Loop start -->
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="selLoopStart">Strip start position</label>
-                    <select id="selLoopStart" is="emby-select" class="emby-select">
+                    <select id="selLoopStart" is="emby-select" class="emby-select"
+                            style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
                         <option value="0">Bottom centre (clockwise)</option>
                         <option value="1">Bottom left (clockwise)</option>
                         <option value="2">Bottom right (clockwise)</option>
@@ -177,18 +178,20 @@
     }
 
     // ── Load config ──────────────────────────────────────────────────────────
+    // Uses our own /WledTv/settings endpoint so property names and types are
+    // fully under our control (avoids Jellyfin enum/serialisation quirks).
     function loadConfig() {
-        apiFetch('/Plugins/' + PLUGIN_ID + '/Configuration')
+        apiFetch('/WledTv/settings')
         .then(function (cfg) {
-            chkEn.checked        = cfg.Enabled !== false;
-            txtUrl.value         = cfg.WledUrl         || '';
-            numH.value           = cfg.HorizontalLedCount || 32;
-            numV.value           = cfg.VerticalLedCount   || 18;
-            numLpm.value         = cfg.LedsPerMeter       || 60;
-            selStart.value       = String(cfg.LoopStart   || 0);
-            rngDepth.value       = Math.round((cfg.SampleDepth || 0.08) * 100);
-            rngBri.value         = cfg.Brightness          || 128;
-            numMs.value          = cfg.UpdateIntervalMs    || 100;
+            chkEn.checked        = cfg.enabled !== false;
+            txtUrl.value         = cfg.wledUrl             || '';
+            numH.value           = cfg.horizontalLedCount  || 32;
+            numV.value           = cfg.verticalLedCount    || 18;
+            numLpm.value         = cfg.ledsPerMeter        || 60;
+            selStart.value       = String(cfg.loopStart    || 0);
+            rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
+            rngBri.value         = cfg.brightness          || 128;
+            numMs.value          = cfg.updateIntervalMs    || 100;
             lblDepth.textContent = rngDepth.value;
             lblBri.textContent   = rngBri.value;
             updateSummary();
@@ -200,17 +203,17 @@
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         var cfg = {
-            Enabled:            chkEn.checked,
-            WledUrl:            txtUrl.value.trim(),
-            HorizontalLedCount: parseInt(numH.value),
-            VerticalLedCount:   parseInt(numV.value),
-            LedsPerMeter:       parseInt(numLpm.value),
-            LoopStart:          parseInt(selStart.value),
-            SampleDepth:        parseInt(rngDepth.value) / 100,
-            Brightness:         parseInt(rngBri.value),
-            UpdateIntervalMs:   parseInt(numMs.value)
+            enabled:            chkEn.checked,
+            wledUrl:            txtUrl.value.trim(),
+            horizontalLedCount: parseInt(numH.value),
+            verticalLedCount:   parseInt(numV.value),
+            ledsPerMeter:       parseInt(numLpm.value),
+            loopStart:          parseInt(selStart.value),
+            sampleDepth:        parseInt(rngDepth.value) / 100,
+            brightness:         parseInt(rngBri.value),
+            updateIntervalMs:   parseInt(numMs.value)
         };
-        apiFetch('/Plugins/' + PLUGIN_ID + '/Configuration', {
+        apiFetch('/WledTv/settings', {
             method: 'POST',
             body: JSON.stringify(cfg)
         })

@@ -48,6 +48,52 @@ public class WledTvController : ControllerBase
             brightness          = Config.Brightness
         });
 
+    // ── Admin settings endpoints (used by the config page) ───────────────────
+
+    /// <summary>
+    /// Returns the full plugin configuration for the admin page.
+    /// All numeric/boolean values so the page never has to deal with enum strings.
+    /// </summary>
+    [HttpGet("settings")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetSettings() =>
+        Ok(new
+        {
+            enabled             = Config.Enabled,
+            wledUrl             = Config.WledUrl,
+            horizontalLedCount  = Config.HorizontalLedCount,
+            verticalLedCount    = Config.VerticalLedCount,
+            ledsPerMeter        = Config.LedsPerMeter,
+            loopStart           = (int)Config.LoopStart,
+            sampleDepth         = Config.SampleDepth,
+            updateIntervalMs    = Config.UpdateIntervalMs,
+            brightness          = Config.Brightness
+        });
+
+    /// <summary>
+    /// Saves the plugin configuration from the admin page.
+    /// </summary>
+    [HttpPost("settings")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult SaveSettings([FromBody] SettingsPayload s)
+    {
+        var cfg = Plugin.Instance!.Configuration;
+        cfg.Enabled            = s.Enabled;
+        cfg.WledUrl            = s.WledUrl?.Trim() ?? cfg.WledUrl;
+        cfg.HorizontalLedCount = Math.Max(1, s.HorizontalLedCount);
+        cfg.VerticalLedCount   = Math.Max(1, s.VerticalLedCount);
+        cfg.LedsPerMeter       = Math.Max(1, s.LedsPerMeter);
+        cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
+        cfg.SampleDepth        = Math.Clamp(s.SampleDepth, 0.01, 0.5);
+        cfg.UpdateIntervalMs   = Math.Max(40, s.UpdateIntervalMs);
+        cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
+        Plugin.Instance!.SaveConfiguration();
+        return NoContent();
+    }
+
     // ── LED proxy endpoint ────────────────────────────────────────────────────
 
     /// <summary>
@@ -111,6 +157,20 @@ public class WledTvController : ControllerBase
             return Ok(new { success = false, status = 0, body = ex.Message });
         }
     }
+}
+
+/// <summary>Admin settings payload received from the config page.</summary>
+public class SettingsPayload
+{
+    public bool   Enabled            { get; set; } = true;
+    public string WledUrl            { get; set; } = string.Empty;
+    public int    HorizontalLedCount { get; set; } = 32;
+    public int    VerticalLedCount   { get; set; } = 18;
+    public int    LedsPerMeter       { get; set; } = 60;
+    public int    LoopStart          { get; set; }
+    public double SampleDepth        { get; set; } = 0.08;
+    public int    UpdateIntervalMs   { get; set; } = 100;
+    public int    Brightness         { get; set; } = 128;
 }
 
 /// <summary>Payload posted by the client-side script containing per-LED RGB data.</summary>
