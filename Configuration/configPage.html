@@ -136,112 +136,114 @@
         });
     }
 
-    // ── UI references ────────────────────────────────────────────────────────
-    var banner   = document.getElementById('wledBanner');
-    var form     = document.getElementById('wledConfigForm');
-    var chkEn    = document.getElementById('chkEnabled');
-    var txtUrl   = document.getElementById('txtWledUrl');
-    var numH     = document.getElementById('numHLeds');
-    var numV     = document.getElementById('numVLeds');
-    var numLpm   = document.getElementById('numLedsPerMeter');
-    var selStart = document.getElementById('selLoopStart');
-    var rngDepth = document.getElementById('numSampleDepth');
-    var rngBri   = document.getElementById('numBrightness');
-    var numMs    = document.getElementById('numIntervalMs');
-    var lblDepth = document.getElementById('lblSampleDepth');
-    var lblBri   = document.getElementById('lblBrightness');
-    var lblTotal = document.getElementById('lblTotal');
-    var lblLen   = document.getElementById('lblLength');
-    var btnTest  = document.getElementById('btnTest');
-    var testOut  = document.getElementById('wledTestResult');
+    // ── All DOM lookups and event registrations happen inside pageshow ──────────
+    // This matches the pattern required by Jellyfin's admin page system: the
+    // pageshow event fires after the page div is fully in the live document,
+    // guaranteeing that getElementById calls succeed. Doing them earlier (at
+    // IIFE execution time) can return null, causing a silent TypeError that
+    // prevents the pageshow listener itself from being registered.
+    document.addEventListener('pageshow', function (e) {
+        if (e.target.id !== 'WledTvConfigPage') return;
 
-    // ── Live labels ──────────────────────────────────────────────────────────
-    function updateSummary() {
-        var h = parseInt(numH.value) || 0;
-        var v = parseInt(numV.value) || 0;
-        var lpm = parseInt(numLpm.value) || 60;
-        lblTotal.textContent = 2 * h + 2 * v;
-        lblLen.textContent   = ((2 * h + 2 * v) / lpm).toFixed(1);
-    }
-    rngDepth.addEventListener('input', function () { lblDepth.textContent = rngDepth.value; });
-    rngBri.addEventListener('input',   function () { lblBri.textContent   = rngBri.value; });
-    numH.addEventListener('input',   updateSummary);
-    numV.addEventListener('input',   updateSummary);
-    numLpm.addEventListener('input', updateSummary);
+        // ── UI references ────────────────────────────────────────────────────
+        var banner   = document.getElementById('wledBanner');
+        var form     = document.getElementById('wledConfigForm');
+        var chkEn    = document.getElementById('chkEnabled');
+        var txtUrl   = document.getElementById('txtWledUrl');
+        var numH     = document.getElementById('numHLeds');
+        var numV     = document.getElementById('numVLeds');
+        var numLpm   = document.getElementById('numLedsPerMeter');
+        var selStart = document.getElementById('selLoopStart');
+        var rngDepth = document.getElementById('numSampleDepth');
+        var rngBri   = document.getElementById('numBrightness');
+        var numMs    = document.getElementById('numIntervalMs');
+        var lblDepth = document.getElementById('lblSampleDepth');
+        var lblBri   = document.getElementById('lblBrightness');
+        var lblTotal = document.getElementById('lblTotal');
+        var lblLen   = document.getElementById('lblLength');
+        var btnTest  = document.getElementById('btnTest');
+        var testOut  = document.getElementById('wledTestResult');
 
-    // ── Banner helpers ───────────────────────────────────────────────────────
-    function showBanner(msg, ok) {
-        banner.textContent = msg;
-        banner.style.color   = ok ? '#00a4dc' : '#f44336';
-        banner.style.display = 'block';
-        setTimeout(function () { banner.style.display = 'none'; }, 4000);
-    }
+        // ── Helpers ──────────────────────────────────────────────────────────
+        function showBanner(msg, ok) {
+            banner.textContent   = msg;
+            banner.style.color   = ok ? '#00a4dc' : '#f44336';
+            banner.style.display = 'block';
+            setTimeout(function () { banner.style.display = 'none'; }, 4000);
+        }
 
-    // ── Load config ──────────────────────────────────────────────────────────
-    // Uses our own /WledTv/settings endpoint so property names and types are
-    // fully under our control (avoids Jellyfin enum/serialisation quirks).
-    function loadConfig() {
+        function updateSummary() {
+            var h   = parseInt(numH.value)   || 0;
+            var v   = parseInt(numV.value)   || 0;
+            var lpm = parseInt(numLpm.value) || 60;
+            lblTotal.textContent = 2 * h + 2 * v;
+            lblLen.textContent   = ((2 * h + 2 * v) / lpm).toFixed(1);
+        }
+
+        // ── Live label bindings ───────────────────────────────────────────────
+        rngDepth.addEventListener('input', function () { lblDepth.textContent = rngDepth.value; });
+        rngBri.addEventListener('input',   function () { lblBri.textContent   = rngBri.value; });
+        numH.addEventListener('input',   updateSummary);
+        numV.addEventListener('input',   updateSummary);
+        numLpm.addEventListener('input', updateSummary);
+
+        // ── Load config ───────────────────────────────────────────────────────
         apiFetch('/WledTv/settings')
         .then(function (cfg) {
             chkEn.checked        = cfg.enabled !== false;
-            txtUrl.value         = cfg.wledUrl             || '';
-            numH.value           = cfg.horizontalLedCount  || 32;
-            numV.value           = cfg.verticalLedCount    || 18;
-            numLpm.value         = cfg.ledsPerMeter        || 60;
-            selStart.value       = String(cfg.loopStart    || 0);
+            txtUrl.value         = cfg.wledUrl            || '';
+            numH.value           = cfg.horizontalLedCount || 32;
+            numV.value           = cfg.verticalLedCount   || 18;
+            numLpm.value         = cfg.ledsPerMeter       || 60;
+            selStart.value       = String(cfg.loopStart   || 0);
             rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
-            rngBri.value         = cfg.brightness          || 128;
-            numMs.value          = cfg.updateIntervalMs    || 100;
+            rngBri.value         = cfg.brightness         || 128;
+            numMs.value          = cfg.updateIntervalMs   || 100;
             lblDepth.textContent = rngDepth.value;
             lblBri.textContent   = rngBri.value;
             updateSummary();
         })
-        .catch(function (e) { showBanner('Failed to load configuration: ' + e.message, false); });
-    }
+        .catch(function (err) { showBanner('Failed to load: ' + err.message, false); });
 
-    // ── Save config ──────────────────────────────────────────────────────────
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var cfg = {
-            enabled:            chkEn.checked,
-            wledUrl:            txtUrl.value.trim(),
-            horizontalLedCount: parseInt(numH.value),
-            verticalLedCount:   parseInt(numV.value),
-            ledsPerMeter:       parseInt(numLpm.value),
-            loopStart:          parseInt(selStart.value),
-            sampleDepth:        parseInt(rngDepth.value) / 100,
-            brightness:         parseInt(rngBri.value),
-            updateIntervalMs:   parseInt(numMs.value)
-        };
-        apiFetch('/WledTv/settings', {
-            method: 'POST',
-            body: JSON.stringify(cfg)
-        })
-        .then(function () { showBanner('Configuration saved.', true); })
-        .catch(function (e) { showBanner('Save failed: ' + e.message, false); });
-    });
-
-    // ── Test connection ──────────────────────────────────────────────────────
-    btnTest.addEventListener('click', function () {
-        testOut.textContent = 'Testing…';
-        testOut.style.display = 'block';
-        apiFetch('/WledTv/test')
-        .then(function (r) {
-            testOut.style.color = r.success ? '#27ae60' : '#f44336';
-            testOut.textContent = r.success
-                ? 'Connected! WLED responded with HTTP ' + r.status + '.'
-                : 'Failed (HTTP ' + r.status + '): ' + r.body;
-        })
-        .catch(function (e) {
-            testOut.style.color = '#f44336';
-            testOut.textContent = 'Error: ' + e.message;
+        // ── Save config ───────────────────────────────────────────────────────
+        form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            apiFetch('/WledTv/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    enabled:            chkEn.checked,
+                    wledUrl:            txtUrl.value.trim(),
+                    horizontalLedCount: parseInt(numH.value),
+                    verticalLedCount:   parseInt(numV.value),
+                    ledsPerMeter:       parseInt(numLpm.value),
+                    loopStart:          parseInt(selStart.value),
+                    sampleDepth:        parseInt(rngDepth.value) / 100,
+                    brightness:         parseInt(rngBri.value),
+                    updateIntervalMs:   parseInt(numMs.value)
+                })
+            })
+            .then(function () { showBanner('Configuration saved.', true); })
+            .catch(function (err) { showBanner('Save failed: ' + err.message, false); });
         });
-    });
 
-    // ── Init ─────────────────────────────────────────────────────────────────
-    document.addEventListener('pageshow', function (e) {
-        if (e.target.id !== 'WledTvConfigPage') return;
-        loadConfig();
+        // ── Test connection ───────────────────────────────────────────────────
+        btnTest.addEventListener('click', function () {
+            testOut.textContent   = 'Testing…';
+            testOut.style.display = 'block';
+            apiFetch('/WledTv/test')
+            .then(function (r) {
+                testOut.style.color = r.success ? '#27ae60' : '#f44336';
+                testOut.textContent = r.success
+                    ? 'Connected! WLED responded with HTTP ' + r.status + '.'
+                    : 'Failed (HTTP ' + r.status + '): ' + r.body;
+            })
+            .catch(function (err) {
+                testOut.style.color = '#f44336';
+                testOut.textContent = 'Error: ' + err.message;
+            });
+        });
+
+        // (pageshow replaces the old separate init block below)
     });
 })();
 </script>
