@@ -36,7 +36,7 @@ jobs:
 
       - name: Package
         run: |
-          cd Jellyfin.Plugin.WledTv/bin/Release/net9.0
+          cd bin/Release/net9.0
           zip Jellyfin.Plugin.WledTv.zip Jellyfin.Plugin.WledTv.dll
           md5sum Jellyfin.Plugin.WledTv.zip | awk '{print $1}' > Jellyfin.Plugin.WledTv.zip.md5
 
@@ -45,8 +45,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.ref_name }}" \
-            "Jellyfin.Plugin.WledTv/bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip" \
-            "Jellyfin.Plugin.WledTv/bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip.md5" \
+            "bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip" \
+            "bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip.md5" \
             "build.yaml"
 
       - name: Regenerate manifest
