@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix: config page completely unresponsive\n\nThe script tag was outside the data-role=page div so Jellyfin never\nexecuted it. Moved inside the div. Also sets correct default values\non the LEDs/m (60) and update interval (100ms) inputs.",
+        "checksum": "c260f22583db093f218360f6f86d5cce",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.4.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-02T23:17:51Z",
+        "version": "0.0.4.0"
+      },
+      {
         "changelog": "Fix: config page not responding to any interactions\n\nAll DOM lookups and event listeners were running before the page was\nmounted, causing silent failures. Moved inside the pageshow handler.",
         "checksum": "2703c7450a222c8616255b934efa1e0e",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.3.0/Jellyfin.Plugin.WledTv.zip",
