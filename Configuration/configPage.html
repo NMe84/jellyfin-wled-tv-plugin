@@ -47,23 +47,29 @@
                                min="2" max="512" step="1">
                         <div class="fieldDescription">LEDs on the left and right edges.</div>
                     </div>
-                    <div class="inputContainer" style="flex:1;min-width:140px;">
-                        <label class="inputLabel inputLabelUnfocused" for="numLedsPerMeter">LEDs per metre</label>
-                        <input type="number" id="numLedsPerMeter" is="emby-input" class="emby-input"
-                               min="1" max="144" step="1" value="60">
-                    </div>
                 </div>
 
-                <!-- Loop start -->
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="selLoopStart">Strip start position</label>
-                    <select id="selLoopStart" is="emby-select" class="emby-select"
-                            style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
-                        <option value="0">Bottom centre (clockwise)</option>
-                        <option value="1">Bottom left (clockwise)</option>
-                        <option value="2">Bottom right (clockwise)</option>
-                    </select>
-                    <div class="fieldDescription">Where LED #0 is physically located on the strip.</div>
+                <!-- Strip start + direction -->
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div class="inputContainer" style="flex:1;min-width:160px;">
+                        <label class="inputLabel inputLabelUnfocused" for="selLoopStart">Strip start position</label>
+                        <select id="selLoopStart" is="emby-select" class="emby-select"
+                                style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
+                            <option value="0">Bottom centre</option>
+                            <option value="1">Bottom left</option>
+                            <option value="2">Bottom right</option>
+                        </select>
+                        <div class="fieldDescription">Where LED #0 is physically located on the strip.</div>
+                    </div>
+                    <div class="inputContainer" style="flex:1;min-width:160px;">
+                        <label class="inputLabel inputLabelUnfocused" for="selDirection">Strip direction</label>
+                        <select id="selDirection" is="emby-select" class="emby-select"
+                                style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
+                            <option value="0">Clockwise</option>
+                            <option value="1">Counter-clockwise</option>
+                        </select>
+                        <div class="fieldDescription">Which way the strip runs from the start point (when viewed from the front of the TV).</div>
+                    </div>
                 </div>
 
                 <!-- Sample depth -->
@@ -96,7 +102,6 @@
                 <!-- LED count summary -->
                 <p style="margin:.5em 0 1.5em;font-size:.85em;color:#888;">
                     Total LEDs: <strong id="lblTotal">0</strong>
-                    &nbsp;·&nbsp; Strip length: <strong id="lblLength">0</strong> m
                 </p>
 
                 <!-- Actions -->
@@ -144,23 +149,22 @@
         if (e.target.id !== 'WledTvConfigPage') return;
 
         // ── UI references ────────────────────────────────────────────────────
-        var banner   = document.getElementById('wledBanner');
-        var form     = document.getElementById('wledConfigForm');
-        var chkEn    = document.getElementById('chkEnabled');
-        var txtUrl   = document.getElementById('txtWledUrl');
-        var numH     = document.getElementById('numHLeds');
-        var numV     = document.getElementById('numVLeds');
-        var numLpm   = document.getElementById('numLedsPerMeter');
-        var selStart = document.getElementById('selLoopStart');
-        var rngDepth = document.getElementById('numSampleDepth');
-        var rngBri   = document.getElementById('numBrightness');
-        var numMs    = document.getElementById('numIntervalMs');
-        var lblDepth = document.getElementById('lblSampleDepth');
-        var lblBri   = document.getElementById('lblBrightness');
-        var lblTotal = document.getElementById('lblTotal');
-        var lblLen   = document.getElementById('lblLength');
-        var btnTest  = document.getElementById('btnTest');
-        var testOut  = document.getElementById('wledTestResult');
+        var banner    = document.getElementById('wledBanner');
+        var form      = document.getElementById('wledConfigForm');
+        var chkEn     = document.getElementById('chkEnabled');
+        var txtUrl    = document.getElementById('txtWledUrl');
+        var numH      = document.getElementById('numHLeds');
+        var numV      = document.getElementById('numVLeds');
+        var selStart  = document.getElementById('selLoopStart');
+        var selDir    = document.getElementById('selDirection');
+        var rngDepth  = document.getElementById('numSampleDepth');
+        var rngBri    = document.getElementById('numBrightness');
+        var numMs     = document.getElementById('numIntervalMs');
+        var lblDepth  = document.getElementById('lblSampleDepth');
+        var lblBri    = document.getElementById('lblBrightness');
+        var lblTotal  = document.getElementById('lblTotal');
+        var btnTest   = document.getElementById('btnTest');
+        var testOut   = document.getElementById('wledTestResult');
 
         // ── Helpers ──────────────────────────────────────────────────────────
         function showBanner(msg, ok) {
@@ -171,19 +175,14 @@
         }
 
         function updateSummary() {
-            var h   = parseInt(numH.value)   || 0;
-            var v   = parseInt(numV.value)   || 0;
-            var lpm = parseInt(numLpm.value) || 60;
-            lblTotal.textContent = 2 * h + 2 * v;
-            lblLen.textContent   = ((2 * h + 2 * v) / lpm).toFixed(1);
+            lblTotal.textContent = 2 * (parseInt(numH.value) || 0) + 2 * (parseInt(numV.value) || 0);
         }
 
         // ── Live label bindings ───────────────────────────────────────────────
         rngDepth.addEventListener('input', function () { lblDepth.textContent = rngDepth.value; });
         rngBri.addEventListener('input',   function () { lblBri.textContent   = rngBri.value; });
-        numH.addEventListener('input',   updateSummary);
-        numV.addEventListener('input',   updateSummary);
-        numLpm.addEventListener('input', updateSummary);
+        numH.addEventListener('input', updateSummary);
+        numV.addEventListener('input', updateSummary);
 
         // ── Load config ───────────────────────────────────────────────────────
         apiFetch('/WledTv/settings')
@@ -192,8 +191,8 @@
             txtUrl.value         = cfg.wledUrl            || '';
             numH.value           = cfg.horizontalLedCount || 32;
             numV.value           = cfg.verticalLedCount   || 18;
-            numLpm.value         = cfg.ledsPerMeter       || 60;
             selStart.value       = String(cfg.loopStart   || 0);
+            selDir.value         = String(cfg.direction   !== undefined ? cfg.direction : 1);
             rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
             rngBri.value         = cfg.brightness         || 128;
             numMs.value          = cfg.updateIntervalMs   || 100;
@@ -213,8 +212,8 @@
                     wledUrl:            txtUrl.value.trim(),
                     horizontalLedCount: parseInt(numH.value),
                     verticalLedCount:   parseInt(numV.value),
-                    ledsPerMeter:       parseInt(numLpm.value),
                     loopStart:          parseInt(selStart.value),
+                    direction:          parseInt(selDir.value),
                     sampleDepth:        parseInt(rngDepth.value) / 100,
                     brightness:         parseInt(rngBri.value),
                     updateIntervalMs:   parseInt(numMs.value)

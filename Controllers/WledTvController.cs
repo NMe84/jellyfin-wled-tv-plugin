@@ -39,13 +39,14 @@ public class WledTvController : ControllerBase
     public ActionResult<object> GetConfig() =>
         Ok(new
         {
-            enabled             = Config.Enabled,
-            horizontalLedCount  = Config.HorizontalLedCount,
-            verticalLedCount    = Config.VerticalLedCount,
-            loopStart           = (int)Config.LoopStart,
-            sampleDepth         = Config.SampleDepth,
-            updateIntervalMs    = Config.UpdateIntervalMs,
-            brightness          = Config.Brightness
+            enabled            = Config.Enabled,
+            horizontalLedCount = Config.HorizontalLedCount,
+            verticalLedCount   = Config.VerticalLedCount,
+            loopStart          = (int)Config.LoopStart,
+            direction          = (int)Config.Direction,
+            sampleDepth        = Config.SampleDepth,
+            updateIntervalMs   = Config.UpdateIntervalMs,
+            brightness         = Config.Brightness
         });
 
     // ── Admin settings endpoints (used by the config page) ───────────────────
@@ -60,15 +61,15 @@ public class WledTvController : ControllerBase
     public ActionResult<object> GetSettings() =>
         Ok(new
         {
-            enabled             = Config.Enabled,
-            wledUrl             = Config.WledUrl,
-            horizontalLedCount  = Config.HorizontalLedCount,
-            verticalLedCount    = Config.VerticalLedCount,
-            ledsPerMeter        = Config.LedsPerMeter,
-            loopStart           = (int)Config.LoopStart,
-            sampleDepth         = Config.SampleDepth,
-            updateIntervalMs    = Config.UpdateIntervalMs,
-            brightness          = Config.Brightness
+            enabled            = Config.Enabled,
+            wledUrl            = Config.WledUrl,
+            horizontalLedCount = Config.HorizontalLedCount,
+            verticalLedCount   = Config.VerticalLedCount,
+            loopStart          = (int)Config.LoopStart,
+            direction          = (int)Config.Direction,
+            sampleDepth        = Config.SampleDepth,
+            updateIntervalMs   = Config.UpdateIntervalMs,
+            brightness         = Config.Brightness
         });
 
     /// <summary>
@@ -85,8 +86,8 @@ public class WledTvController : ControllerBase
         cfg.WledUrl            = s.WledUrl?.Trim() ?? cfg.WledUrl;
         cfg.HorizontalLedCount = Math.Max(1, s.HorizontalLedCount);
         cfg.VerticalLedCount   = Math.Max(1, s.VerticalLedCount);
-        cfg.LedsPerMeter       = Math.Max(1, s.LedsPerMeter);
         cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
+        cfg.Direction          = (LedLoopDirection)Math.Clamp(s.Direction, 0, 1);
         cfg.SampleDepth        = Math.Clamp(s.SampleDepth, 0.01, 0.5);
         cfg.UpdateIntervalMs   = Math.Max(40, s.UpdateIntervalMs);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
@@ -166,8 +167,8 @@ public class SettingsPayload
     public string WledUrl            { get; set; } = string.Empty;
     public int    HorizontalLedCount { get; set; } = 32;
     public int    VerticalLedCount   { get; set; } = 18;
-    public int    LedsPerMeter       { get; set; } = 60;
     public int    LoopStart          { get; set; }
+    public int    Direction          { get; set; } = 1; // CounterClockwise
     public double SampleDepth        { get; set; } = 0.08;
     public int    UpdateIntervalMs   { get; set; } = 100;
     public int    Brightness         { get; set; } = 128;

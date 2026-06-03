@@ -172,10 +172,12 @@ public class LedScriptService : IHostedService, IDisposable
 
   // ── LED colour calculation ──────────────────────────────────────────────────
   //
-  // Layout (clockwise from the configured start position):
+  // Colours are always computed in the clockwise order first:
   //   BottomCenter: right-half of bottom → right side → top → left side → left-half of bottom
   //   BottomLeft  : full bottom (L→R) → right side → top (R→L) → left side (T→B)
   //   BottomRight : right side (B→T) → top (R→L) → left side (T→B) → full bottom (L→R)
+  //
+  // For counter-clockwise strips the array is simply reversed: CCW is CW backwards.
 
   function computeLedColors() {
     var vw = canvas.width, vh = canvas.height;
@@ -262,6 +264,7 @@ public class LedScriptService : IHostedService, IDisposable
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
         var colors = computeLedColors();
+        if (config.direction === 1) colors.reverse(); // 1 = CounterClockwise
         sendColors(colors);
       } catch (err) {
         // getImageData may throw on DRM-protected content — suppress silently
