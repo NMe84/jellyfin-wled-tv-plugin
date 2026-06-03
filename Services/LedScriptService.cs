@@ -356,12 +356,14 @@ public class LedScriptService : IHostedService, IDisposable
 
     var frameStart = Date.now();
 
-    // Only sample when actually playing with valid dimensions.
-    // If paused or buffering (videoWidth === 0) we skip the frame but keep
-    // the loop alive — stopping here caused a permanent stall because
-    // checkState's restart condition also requires videoWidth > 0, so the
-    // loop could never restart while the video was in a transient state.
-    if (!video.paused && video.videoWidth > 0) {
+    // Only sample when the video is actually playing AND has decoded at least
+    // one frame (readyState >= 2 = HAVE_CURRENT_DATA).  Calling drawImage()
+    // on an HLS/MSE video before it has frame data (readyState == 1) triggers
+    // an internal browser state change that causes hls.js to throw an
+    // internalException, which Jellyfin treats as a fatal error and stops
+    // playback.  The videoWidth > 0 check alone is insufficient because HLS
+    // reports dimensions from the manifest before decoding any frames.
+    if (!video.paused && video.readyState >= 2) {
       try {
         ensureCanvas();
         canvas.width  = video.videoWidth;
