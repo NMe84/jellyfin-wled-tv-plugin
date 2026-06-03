@@ -251,16 +251,15 @@ public class LedScriptService : IHostedService, IDisposable
     try {
       var socket = new WebSocket(config.wledWsUrl);
       ws = socket;
+      socket.onopen  = function () { console.log('[wledtv] ws: opened'); };
       socket.onclose = function () {
-        // Guard against stale closures: if ws has already been replaced by a
-        // newer connection, do NOT overwrite it. Without this, the onclose of
-        // an old socket fires after we've already created a new one, sets
-        // ws = null, and silently kills the replacement connection.
-        if (ws === socket) {
+        var wasCurrent = ws === socket;
+        if (wasCurrent) {
           ws = null;
           wsReconnecting = true;
           setTimeout(function () { wsReconnecting = false; }, 2000);
         }
+        console.log('[wledtv] ws: closed (current=' + wasCurrent + ', reconn=' + wsReconnecting + ')');
       };
       socket.onerror = function () { /* onclose fires after onerror */ };
     } catch (e) {
@@ -278,12 +277,35 @@ public class LedScriptService : IHostedService, IDisposable
 
   // ── Colour output (direct WebSocket to WLED) ──────────────────────────────
 
+  var _lastDropLog = 0;
+  var _sentCount   = 0;
+  var _dropCount   = 0;
+
   function sendColors(colors) {
     openWebSocket();
-    if (!ws || ws.readyState !== 1) return; // 1 = OPEN; drop frame if not connected yet
 
-    // Skip frame if the buffer is growing faster than WLED can drain it (backpressure)
-    if (ws.bufferedAmount > 16000) return;
+    var now = Date.now();
+    var logInterval = 3000; // only log drop reason once every 3 s
+
+    if (!ws || ws.readyState !== 1) {
+      _dropCount++;
+      if (now - _lastDropLog > logInterval) {
+        _lastDropLog = now;
+        console.log('[wledtv] frame drop: ws not ready (state=' +
+          (ws ? ws.readyState : 'null') + '), sent=' + _sentCount + ' dropped=' + _dropCount);
+      }
+      return;
+    }
+
+    if (ws.bufferedAmount > 16000) {
+      _dropCount++;
+      if (now - _lastDropLog > logInterval) {
+        _lastDropLog = now;
+        console.log('[wledtv] frame drop: buffer full (' + ws.bufferedAmount +
+          ' bytes), sent=' + _sentCount + ' dropped=' + _dropCount);
+      }
+      return;
+    }
 
     var flat = [];
     colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
@@ -293,10 +315,11 @@ public class LedScriptService : IHostedService, IDisposable
         bri: config.brightness,
         seg: [{ i: flat }]
       }));
+      _sentCount++;
     } catch (e) {
+      console.log('[wledtv] ws.send threw: ' + e);
       ws = null; // force reconnect next frame
     }
-    // ws.send() is fire-and-forget — no promise needed
   }
 
   function sendOff() {
@@ -318,12 +341,18 @@ public class LedScriptService : IHostedService, IDisposable
 
   function sampleStep(gen) {
     if (gen !== loopGen || !loopRunning) return;
-    if (!config || !config.enabled) { stopSampling(); return; }
+    if (!config || !config.enabled) {
+      console.log('[wledtv] stopping: config disabled');
+      stopSampling(); return;
+    }
 
     var video = document.querySelector('video');
 
     // Video gone entirely → turn LEDs off and stop
-    if (!video || video.ended) { turnOffLeds(); return; }
+    if (!video || video.ended) {
+      console.log('[wledtv] stopping: video ' + (video ? 'ended' : 'gone'));
+      turnOffLeds(); return;
+    }
 
     var frameStart = Date.now();
 
@@ -358,6 +387,7 @@ public class LedScriptService : IHostedService, IDisposable
     ledsOn = true;
     loopGen++;
     openWebSocket();
+    console.log('[wledtv] loop started (gen=' + loopGen + ')');
     sampleStep(loopGen);
   }
 
@@ -367,27 +397,23 @@ public class LedScriptService : IHostedService, IDisposable
   }
 
   function turnOffLeds() {
+    var wasOn = ledsOn;
     stopSampling();
-    if (!ledsOn) return;
+    if (!wasOn) return;
     ledsOn = false;
     sendOff();
     closeWebSocket();
   }
 
   // ── Page / playback detection ───────────────────────────────────────────────
-  // Start the loop whenever a video element is present (regardless of paused
-  // state). The loop itself decides whether to sample on each tick.
+  // checkState is ONLY responsible for starting the loop when a video appears.
+  // Stopping is handled exclusively by sampleStep — avoids false stops when
+  // document.querySelector('video') transiently returns null mid-playback.
 
   function checkState() {
     var video = document.querySelector('video');
-    if (video && !video.ended) {
-      // Video element is present — ensure the loop is running
-      if (!loopRunning) {
-        loadConfig(function () { if (config && config.enabled) startSampling(); });
-      }
-    } else {
-      // No video element (or it ended) — stop and turn off LEDs
-      turnOffLeds();
+    if (video && !video.ended && !loopRunning) {
+      loadConfig(function () { if (config && config.enabled) startSampling(); });
     }
   }
 
