@@ -10,6 +10,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddHostedService<LedScriptService>();
+        // No AddHttpClient — colour stream now goes browser→WLED directly via WebSocket.
+        // The server only needs a plain HttpClient for the WebSocket connectivity test.
         serviceCollection.AddHttpClient();
     }
 }

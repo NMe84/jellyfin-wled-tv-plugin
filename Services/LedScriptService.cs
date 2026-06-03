@@ -124,12 +124,13 @@ public class LedScriptService : IHostedService, IDisposable
   var canvas       = null;
   var ctx          = null;
   var lastCfgFetch = 0;
-  // Sequential-loop state: each new loop gets a unique generation number.
-  // Any pending setTimeout from a previous generation sees a mismatch and exits,
-  // so we never have two concurrent loops and requests never pile up.
-  var loopGen     = 0;
-  var loopRunning = false;
-  var ledsOn      = false; // tracks whether we last sent colours (guards redundant off calls)
+  var loopGen      = 0;
+  var loopRunning  = false;
+  var ledsOn       = false;
+
+  // ── WebSocket to WLED (direct, no server proxy) ───────────────────────────────
+  var ws              = null;
+  var wsReconnecting  = false;
 
   // ── Config loading ──────────────────────────────────────────────────────────
 
@@ -240,68 +241,85 @@ public class LedScriptService : IHostedService, IDisposable
     return colors;
   }
 
-  // ── Send to plugin (which proxies to WLED) ──────────────────────────────────
+  // ── WebSocket management ────────────────────────────────────────────────────
 
-  function sendColors(colors) {
-    var flat = [];
-    colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
-    // Return the promise so the caller can wait for completion (backpressure).
-    return fetch(getBaseUrl() + '/WledTv/leds', {
-      method: 'POST',
-      headers: {
-        'X-Emby-Token': getToken(),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ brightness: config.brightness, leds: flat })
-    });
+  function openWebSocket() {
+    if (wsReconnecting) return;
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // CONNECTING or OPEN
+    if (!config || !config.wledWsUrl) return;
+
+    try {
+      ws = new WebSocket(config.wledWsUrl);
+      ws.onclose = function () {
+        ws = null;
+        // Brief back-off before reconnecting to avoid hammering an offline device
+        wsReconnecting = true;
+        setTimeout(function () { wsReconnecting = false; }, 2000);
+      };
+      ws.onerror = function () { /* onclose fires after onerror */ };
+    } catch (e) {
+      ws = null;
+    }
   }
 
-  // ── Sequential sampling loop ─────────────────────────────────────────────────
+  function closeWebSocket() {
+    wsReconnecting = false;
+    if (ws) {
+      try { ws.close(); } catch (e) {}
+      ws = null;
+    }
+  }
+
+  // ── Colour output (direct WebSocket to WLED) ──────────────────────────────
+
+  function sendColors(colors) {
+    openWebSocket();
+    if (!ws || ws.readyState !== 1) return; // 1 = OPEN; drop frame if not connected yet
+
+    // Skip frame if the buffer is growing faster than WLED can drain it (backpressure)
+    if (ws.bufferedAmount > 16000) return;
+
+    var flat = [];
+    colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
+    try {
+      ws.send(JSON.stringify({
+        on:  true,
+        bri: config.brightness,
+        seg: [{ i: flat }]
+      }));
+    } catch (e) {
+      ws = null; // force reconnect next frame
+    }
+    // ws.send() is fire-and-forget — no promise needed
+  }
+
+  function sendOff() {
+    if (!ws || ws.readyState !== 1) return;
+    var total = config.horizontalLedCount * 2 + config.verticalLedCount * 2;
+    var zeros = [];
+    for (var i = 0; i < total * 3; i++) zeros.push(0);
+    try {
+      ws.send(JSON.stringify({ on: false, seg: [{ i: zeros }] }));
+    } catch (e) {}
+  }
+
+  // ── Sampling loop ────────────────────────────────────────────────────────────
   //
-  // Each iteration waits for the WLED POST to complete before scheduling the
-  // next one, so requests never pile up regardless of network latency.
-  // A generation counter (loopGen) lets us safely cancel a loop: any pending
-  // setTimeout that sees a stale generation simply exits without rescheduling.
+  // WebSocket.send() is synchronous (buffers locally), so there is no
+  // request/response cycle to wait for. The loop just paces itself to
+  // updateIntervalMs wall-clock time, accounting for how long canvas
+  // sampling took.
 
   function sampleStep(gen) {
-    if (gen !== loopGen || !loopRunning) return; // stale or stopped
+    if (gen !== loopGen || !loopRunning) return;
     if (!config || !config.enabled) { loopRunning = false; return; }
 
     var video = document.querySelector('video');
 
-    // Video element removed → playback stopped entirely, turn off LEDs
     if (!video || video.ended) { turnOffLeds(); return; }
-
-    // Paused → stop the loop but keep the last colours on the strip
     if (video.paused || video.videoWidth === 0) { loopRunning = false; return; }
 
-    var frameStart = Date.now(); // used for frame-pacing
-    var stepDone   = false;      // ensures only one of (fetch, watchdog) schedules next
-
-    // Watchdog: if the fetch is dropped and never resolves, restart after 5 s
-    // rather than freezing the loop forever.
-    var watchdog = setTimeout(function () {
-      if (!stepDone && gen === loopGen && loopRunning) {
-        stepDone = true;
-        scheduleNext();
-      }
-    }, 5000);
-
-    function scheduleNext() {
-      clearTimeout(watchdog);
-      if (gen !== loopGen || !loopRunning) return;
-      // Frame pacing: subtract time already spent this iteration so the
-      // wall-clock interval stays close to updateIntervalMs.
-      var elapsed = Date.now() - frameStart;
-      var delay   = Math.max(0, (config.updateIntervalMs || 100) - elapsed);
-      setTimeout(function () { sampleStep(gen); }, delay);
-    }
-
-    function done() {
-      if (stepDone) return; // watchdog already fired
-      stepDone = true;
-      scheduleNext();
-    }
+    var frameStart = Date.now();
 
     try {
       ensureCanvas();
@@ -309,13 +327,16 @@ public class LedScriptService : IHostedService, IDisposable
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
       var colors = computeLedColors();
-      if (config.direction === 0) colors.reverse(); // 0 = Clockwise (CCW is the base order)
-      // Wait for the POST to complete before scheduling the next frame.
-      sendColors(colors).then(done, done);
+      if (config.direction === 0) colors.reverse(); // 0 = Clockwise
+      sendColors(colors);
     } catch (err) {
-      // getImageData may throw on DRM-protected content — just reschedule
-      done();
+      // getImageData throws on DRM content — skip frame, keep looping
     }
+
+    if (gen !== loopGen || !loopRunning) return;
+    var elapsed = Date.now() - frameStart;
+    var delay   = Math.max(0, (config.updateIntervalMs || 100) - elapsed);
+    setTimeout(function () { sampleStep(gen); }, delay);
   }
 
   function startSampling() {
@@ -323,22 +344,21 @@ public class LedScriptService : IHostedService, IDisposable
     loopRunning = true;
     ledsOn = true;
     loopGen++;
+    openWebSocket();
     sampleStep(loopGen);
   }
 
   function stopSampling() {
     loopRunning = false;
-    loopGen++;     // invalidates any pending setTimeout callbacks
+    loopGen++;
   }
 
   function turnOffLeds() {
     stopSampling();
-    if (!ledsOn) return; // already off, avoid redundant requests
+    if (!ledsOn) return;
     ledsOn = false;
-    fetch(getBaseUrl() + '/WledTv/off', {
-      method: 'POST',
-      headers: { 'X-Emby-Token': getToken() }
-    }).catch(function () {});
+    sendOff();
+    closeWebSocket();
   }
 
   // ── Page / playback detection ───────────────────────────────────────────────
@@ -346,17 +366,11 @@ public class LedScriptService : IHostedService, IDisposable
   function checkState() {
     var video = document.querySelector('video');
     if (video && !video.paused && !video.ended && video.videoWidth > 0) {
-      // Playing — start loop if not already running
       if (!loopRunning) {
         loadConfig(function () { if (config && config.enabled) startSampling(); });
       }
     } else {
-      // Stop the loop if it is running (covers pause and stop)
       if (loopRunning) stopSampling();
-      // Turn off LEDs if the video element has gone entirely.
-      // This must be checked independently of loopRunning: when the user
-      // pauses first, loopRunning becomes false, then when Jellyfin removes
-      // the video element the guard would have prevented turnOffLeds() firing.
       if (!video || video.ended) turnOffLeds();
     }
   }

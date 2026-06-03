@@ -1,13 +1,11 @@
 using System;
-using System.Net.Http;
-using System.Text;
+using System.Net.WebSockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Jellyfin.Plugin.WledTv.Controllers;
 
@@ -16,12 +14,10 @@ namespace Jellyfin.Plugin.WledTv.Controllers;
 [Produces("application/json")]
 public class WledTvController : ControllerBase
 {
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<WledTvController> _logger;
 
-    public WledTvController(IHttpClientFactory httpClientFactory, ILogger<WledTvController> logger)
+    public WledTvController(ILogger<WledTvController> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -30,8 +26,8 @@ public class WledTvController : ControllerBase
     // ── Config endpoint (read by the injected script) ─────────────────────────
 
     /// <summary>
-    /// Returns the subset of plugin configuration the client-side script needs.
-    /// Accessible to any authenticated user since the script runs in every user session.
+    /// Returns the configuration the client-side script needs.
+    /// The script uses wledWsUrl to open a WebSocket directly to WLED.
     /// </summary>
     [HttpGet("config")]
     [Authorize]
@@ -40,6 +36,7 @@ public class WledTvController : ControllerBase
         Ok(new
         {
             enabled            = Config.Enabled,
+            wledWsUrl          = Config.WledWsUrl,
             horizontalLedCount = Config.HorizontalLedCount,
             verticalLedCount   = Config.VerticalLedCount,
             loopStart          = (int)Config.LoopStart,
@@ -51,10 +48,6 @@ public class WledTvController : ControllerBase
 
     // ── Admin settings endpoints (used by the config page) ───────────────────
 
-    /// <summary>
-    /// Returns the full plugin configuration for the admin page.
-    /// All numeric/boolean values so the page never has to deal with enum strings.
-    /// </summary>
     [HttpGet("settings")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -62,7 +55,7 @@ public class WledTvController : ControllerBase
         Ok(new
         {
             enabled            = Config.Enabled,
-            wledUrl            = Config.WledUrl,
+            wledWsUrl          = Config.WledWsUrl,
             horizontalLedCount = Config.HorizontalLedCount,
             verticalLedCount   = Config.VerticalLedCount,
             loopStart          = (int)Config.LoopStart,
@@ -72,18 +65,14 @@ public class WledTvController : ControllerBase
             brightness         = Config.Brightness
         });
 
-    /// <summary>
-    /// Saves the plugin configuration from the admin page.
-    /// </summary>
     [HttpPost("settings")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult SaveSettings([FromBody] SettingsPayload s)
     {
         var cfg = Plugin.Instance!.Configuration;
         cfg.Enabled            = s.Enabled;
-        cfg.WledUrl            = s.WledUrl?.Trim() ?? cfg.WledUrl;
+        cfg.WledWsUrl          = s.WledWsUrl?.Trim() ?? cfg.WledWsUrl;
         cfg.HorizontalLedCount = Math.Max(1, s.HorizontalLedCount);
         cfg.VerticalLedCount   = Math.Max(1, s.VerticalLedCount);
         cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
@@ -95,92 +84,12 @@ public class WledTvController : ControllerBase
         return NoContent();
     }
 
-    // ── LED proxy endpoint ────────────────────────────────────────────────────
+    // ── Connectivity test ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Accepts an array of per-LED RGB values from the client-side script and
-    /// forwards them to the configured WLED controller.
-    /// Proxying through the server avoids any CORS restrictions on the WLED device.
+    /// Attempts a WebSocket handshake from the server to the configured URL.
+    /// Confirms the WLED device is reachable on the network.
     /// </summary>
-    [HttpPost("leds")]
-    [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status502BadGateway)]
-    public async Task<ActionResult> PostLeds([FromBody] LedPayload payload)
-    {
-        if (!Config.Enabled)
-            return NoContent();
-
-        var wledState = new JObject
-        {
-            ["on"]  = true,
-            ["bri"] = payload.Brightness > 0 ? payload.Brightness : Config.Brightness,
-            ["seg"] = new JArray(new JObject { ["i"] = new JArray(payload.Leds) })
-        };
-
-        try
-        {
-            var client  = _httpClientFactory.CreateClient();
-            var content = new StringContent(wledState.ToString(Formatting.None), Encoding.UTF8, "application/json");
-            var url     = Config.WledUrl.TrimEnd('/') + "/json/state";
-
-            var response = await client.PostAsync(url, content).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-                _logger.LogWarning("WledTv: WLED returned {Status} for POST {Url}", (int)response.StatusCode, url);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "WledTv: failed to reach WLED at {Url}", Config.WledUrl);
-            return StatusCode(StatusCodes.Status502BadGateway);
-        }
-
-        return NoContent();
-    }
-
-    // ── Turn off LEDs ─────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Sends {"on":false} to WLED, turning all LEDs off.
-    /// Called by the client-side script when the user navigates away from a video.
-    /// </summary>
-    [HttpPost("off")]
-    [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult> TurnOff()
-    {
-        if (!Config.Enabled)
-            return NoContent();
-
-        try
-        {
-            // Send "on:false" AND all-zero colours.
-            // Real WLED honours "on":false to cut power to the strip.
-            // Mocks that only implement colour updates will see the black colours
-            // and visually turn off even if they ignore the "on" flag.
-            var total  = Config.HorizontalLedCount * 2 + Config.VerticalLedCount * 2;
-            var iArray = new JArray();
-            for (var i = 0; i < total * 3; i++) iArray.Add(0);
-
-            var payload = new JObject
-            {
-                ["on"]  = false,
-                ["seg"] = new JArray(new JObject { ["i"] = iArray })
-            };
-
-            var client  = _httpClientFactory.CreateClient();
-            var content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
-            await client.PostAsync(Config.WledUrl.TrimEnd('/') + "/json/state", content).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "WledTv: failed to turn off WLED at {Url}", Config.WledUrl);
-        }
-
-        return NoContent();
-    }
-
-    // ── Admin: test connection ────────────────────────────────────────────────
-
     [HttpGet("test")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -188,43 +97,29 @@ public class WledTvController : ControllerBase
     {
         try
         {
-            var client   = _httpClientFactory.CreateClient();
-            var url      = Config.WledUrl.TrimEnd('/') + "/json/info";
-            var response = await client.GetAsync(url).ConfigureAwait(false);
-            var body     = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            return Ok(new { success = response.IsSuccessStatusCode, status = (int)response.StatusCode, body });
+            using var ws  = new ClientWebSocket();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await ws.ConnectAsync(new Uri(Config.WledWsUrl), cts.Token).ConfigureAwait(false);
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None)
+                    .ConfigureAwait(false);
+            return Ok(new { success = true, body = "WebSocket connection successful." });
         }
         catch (Exception ex)
         {
-            return Ok(new { success = false, status = 0, body = ex.Message });
+            return Ok(new { success = false, body = ex.Message });
         }
     }
 }
 
-/// <summary>Admin settings payload received from the config page.</summary>
 public class SettingsPayload
 {
     public bool   Enabled            { get; set; } = true;
-    public string WledUrl            { get; set; } = string.Empty;
+    public string WledWsUrl          { get; set; } = string.Empty;
     public int    HorizontalLedCount { get; set; } = 32;
     public int    VerticalLedCount   { get; set; } = 18;
     public int    LoopStart          { get; set; }
-    public int    Direction          { get; set; } = 1; // CounterClockwise
+    public int    Direction          { get; set; } = 1;
     public double SampleDepth        { get; set; } = 0.08;
     public int    UpdateIntervalMs   { get; set; } = 100;
     public int    Brightness         { get; set; } = 128;
-}
-
-/// <summary>Payload posted by the client-side script containing per-LED RGB data.</summary>
-public class LedPayload
-{
-    /// <summary>
-    /// Flat array of RGB triplets: [R0,G0,B0, R1,G1,B1, …].
-    /// Length must equal 3 × (2×H + 2×V).
-    /// </summary>
-    public int[] Leds { get; set; } = Array.Empty<int>();
-
-    /// <summary>Optional brightness override (0 = use plugin default).</summary>
-    public int Brightness { get; set; }
 }

@@ -4,8 +4,8 @@ namespace Jellyfin.Plugin.WledTv;
 
 public class PluginConfiguration : BasePluginConfiguration
 {
-    /// <summary>Base URL of the WLED HTTP JSON API, e.g. http://192.168.1.50</summary>
-    public string WledUrl { get; set; } = "http://wled.local";
+    /// <summary>Full WebSocket DSN of the WLED device, e.g. ws://192.168.1.50/ws</summary>
+    public string WledWsUrl { get; set; } = "ws://wled.local/ws";
 
     /// <summary>Number of LEDs along the horizontal edges (top and bottom).</summary>
     public int HorizontalLedCount { get; set; } = 32;
@@ -41,9 +41,6 @@ public enum LedLoopStart
 
 public enum LedLoopDirection
 {
-    /// <summary>Clockwise when viewed from the front of the TV.</summary>
     Clockwise        = 0,
-
-    /// <summary>Counter-clockwise when viewed from the front of the TV (most common wiring).</summary>
     CounterClockwise = 1,
 }

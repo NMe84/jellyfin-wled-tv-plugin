@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title>WLED TV</title>
@@ -27,10 +27,10 @@
 
                 <!-- WLED API URL -->
                 <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="txtWledUrl">WLED controller URL</label>
-                    <input type="text" id="txtWledUrl" is="emby-input" class="emby-input"
-                           placeholder="http://192.168.1.50" autocomplete="off">
-                    <div class="fieldDescription">Base URL of the WLED HTTP JSON API. No trailing slash.</div>
+                    <label class="inputLabel inputLabelUnfocused" for="txtWledWsUrl">WLED WebSocket URL</label>
+                    <input type="text" id="txtWledWsUrl" is="emby-input" class="emby-input"
+                           placeholder="ws://192.168.1.50/ws" autocomplete="off">
+                    <div class="fieldDescription">Full WebSocket DSN including protocol, host, port and path. The browser connects to this directly — no server proxy.</div>
                 </div>
 
                 <!-- LED counts -->
@@ -188,7 +188,7 @@
         apiFetch('/WledTv/settings')
         .then(function (cfg) {
             chkEn.checked        = cfg.enabled !== false;
-            txtUrl.value         = cfg.wledUrl            || '';
+            txtUrl.value         = cfg.wledWsUrl           || '';
             numH.value           = cfg.horizontalLedCount || 32;
             numV.value           = cfg.verticalLedCount   || 18;
             selStart.value       = String(cfg.loopStart   || 0);
@@ -209,7 +209,7 @@
                 method: 'POST',
                 body: JSON.stringify({
                     enabled:            chkEn.checked,
-                    wledUrl:            txtUrl.value.trim(),
+                    wledWsUrl:          txtUrl.value.trim(),
                     horizontalLedCount: parseInt(numH.value),
                     verticalLedCount:   parseInt(numV.value),
                     loopStart:          parseInt(selStart.value),
