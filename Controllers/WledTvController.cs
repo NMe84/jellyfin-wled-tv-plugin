@@ -153,8 +153,22 @@ public class WledTvController : ControllerBase
 
         try
         {
+            // Send "on:false" AND all-zero colours.
+            // Real WLED honours "on":false to cut power to the strip.
+            // Mocks that only implement colour updates will see the black colours
+            // and visually turn off even if they ignore the "on" flag.
+            var total  = Config.HorizontalLedCount * 2 + Config.VerticalLedCount * 2;
+            var iArray = new JArray();
+            for (var i = 0; i < total * 3; i++) iArray.Add(0);
+
+            var payload = new JObject
+            {
+                ["on"]  = false,
+                ["seg"] = new JArray(new JObject { ["i"] = iArray })
+            };
+
             var client  = _httpClientFactory.CreateClient();
-            var content = new StringContent("{\"on\":false}", Encoding.UTF8, "application/json");
+            var content = new StringContent(payload.ToString(Formatting.None), Encoding.UTF8, "application/json");
             await client.PostAsync(Config.WledUrl.TrimEnd('/') + "/json/state", content).ConfigureAwait(false);
         }
         catch (Exception ex)

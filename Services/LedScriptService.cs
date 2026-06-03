@@ -129,6 +129,7 @@ public class LedScriptService : IHostedService, IDisposable
   // so we never have two concurrent loops and requests never pile up.
   var loopGen     = 0;
   var loopRunning = false;
+  var ledsOn      = false; // tracks whether we last sent colours (guards redundant off calls)
 
   // ── Config loading ──────────────────────────────────────────────────────────
 
@@ -308,7 +309,7 @@ public class LedScriptService : IHostedService, IDisposable
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
       var colors = computeLedColors();
-      if (config.direction === 1) colors.reverse(); // 1 = CounterClockwise
+      if (config.direction === 0) colors.reverse(); // 0 = Clockwise (CCW is the base order)
       // Wait for the POST to complete before scheduling the next frame.
       sendColors(colors).then(done, done);
     } catch (err) {
@@ -320,6 +321,7 @@ public class LedScriptService : IHostedService, IDisposable
   function startSampling() {
     if (loopRunning) return;
     loopRunning = true;
+    ledsOn = true;
     loopGen++;
     sampleStep(loopGen);
   }
@@ -331,6 +333,8 @@ public class LedScriptService : IHostedService, IDisposable
 
   function turnOffLeds() {
     stopSampling();
+    if (!ledsOn) return; // already off, avoid redundant requests
+    ledsOn = false;
     fetch(getBaseUrl() + '/WledTv/off', {
       method: 'POST',
       headers: { 'X-Emby-Token': getToken() }
@@ -347,15 +351,13 @@ public class LedScriptService : IHostedService, IDisposable
         loadConfig(function () { if (config && config.enabled) startSampling(); });
       }
     } else {
-      if (loopRunning) {
-        if (!video || video.ended) {
-          // Video gone entirely → turn LEDs off
-          turnOffLeds();
-        } else {
-          // Just paused → stop sampling but keep last colours
-          stopSampling();
-        }
-      }
+      // Stop the loop if it is running (covers pause and stop)
+      if (loopRunning) stopSampling();
+      // Turn off LEDs if the video element has gone entirely.
+      // This must be checked independently of loopRunning: when the user
+      // pauses first, loopRunning becomes false, then when Jellyfin removes
+      // the video element the guard would have prevented turnOffLeds() firing.
+      if (!video || video.ended) turnOffLeds();
     }
   }
 
