@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix CW/CCW direction; fix LEDs staying on after stop; improve off payload",
+        "checksum": "15254a517cb9b41851249881d8cae9d1",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.6.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-03T18:19:20Z",
+        "version": "0.0.6.0"
+      },
+      {
         "changelog": "Strip direction; stall watchdog; frame pacing; off on stop\n\n- LEDs/m removed; strip start and direction are now separate settings\n- Counter-clockwise direction support (default); fixes mirrored output\n- Sequential sampling loop with backpressure (waits for POST to complete)\n- 5-second stall watchdog restarts the loop if a request is dropped\n- Frame pacing: delay is reduced by time already spent sampling/sending\n- LEDs turn off when returning to the Jellyfin interface; stay on when paused\n- Config page now saves and loads correctly",
         "checksum": "0f1d978b759d992ffe7b612d0e68e4f8",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.5.0/Jellyfin.Plugin.WledTv.zip",
