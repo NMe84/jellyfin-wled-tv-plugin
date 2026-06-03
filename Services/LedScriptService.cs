@@ -312,25 +312,32 @@ public class LedScriptService : IHostedService, IDisposable
 
   function sampleStep(gen) {
     if (gen !== loopGen || !loopRunning) return;
-    if (!config || !config.enabled) { loopRunning = false; return; }
+    if (!config || !config.enabled) { stopSampling(); return; }
 
     var video = document.querySelector('video');
 
+    // Video gone entirely → turn LEDs off and stop
     if (!video || video.ended) { turnOffLeds(); return; }
-    if (video.paused || video.videoWidth === 0) { loopRunning = false; return; }
 
     var frameStart = Date.now();
 
-    try {
-      ensureCanvas();
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-      var colors = computeLedColors();
-      if (config.direction === 0) colors.reverse(); // 0 = Clockwise
-      sendColors(colors);
-    } catch (err) {
-      // getImageData throws on DRM content — skip frame, keep looping
+    // Only sample when actually playing with valid dimensions.
+    // If paused or buffering (videoWidth === 0) we skip the frame but keep
+    // the loop alive — stopping here caused a permanent stall because
+    // checkState's restart condition also requires videoWidth > 0, so the
+    // loop could never restart while the video was in a transient state.
+    if (!video.paused && video.videoWidth > 0) {
+      try {
+        ensureCanvas();
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        var colors = computeLedColors();
+        if (config.direction === 0) colors.reverse(); // 0 = Clockwise
+        sendColors(colors);
+      } catch (err) {
+        // getImageData throws on DRM content — skip frame, keep looping
+      }
     }
 
     if (gen !== loopGen || !loopRunning) return;
@@ -362,16 +369,19 @@ public class LedScriptService : IHostedService, IDisposable
   }
 
   // ── Page / playback detection ───────────────────────────────────────────────
+  // Start the loop whenever a video element is present (regardless of paused
+  // state). The loop itself decides whether to sample on each tick.
 
   function checkState() {
     var video = document.querySelector('video');
-    if (video && !video.paused && !video.ended && video.videoWidth > 0) {
+    if (video && !video.ended) {
+      // Video element is present — ensure the loop is running
       if (!loopRunning) {
         loadConfig(function () { if (config && config.enabled) startSampling(); });
       }
     } else {
-      if (loopRunning) stopSampling();
-      if (!video || video.ended) turnOffLeds();
+      // No video element (or it ended) — stop and turn off LEDs
+      turnOffLeds();
     }
   }
 
