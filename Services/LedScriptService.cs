@@ -274,9 +274,32 @@ public class LedScriptService : IHostedService, IDisposable
     // Paused → stop the loop but keep the last colours on the strip
     if (video.paused || video.videoWidth === 0) { loopRunning = false; return; }
 
+    var frameStart = Date.now(); // used for frame-pacing
+    var stepDone   = false;      // ensures only one of (fetch, watchdog) schedules next
+
+    // Watchdog: if the fetch is dropped and never resolves, restart after 5 s
+    // rather than freezing the loop forever.
+    var watchdog = setTimeout(function () {
+      if (!stepDone && gen === loopGen && loopRunning) {
+        stepDone = true;
+        scheduleNext();
+      }
+    }, 5000);
+
     function scheduleNext() {
+      clearTimeout(watchdog);
       if (gen !== loopGen || !loopRunning) return;
-      setTimeout(function () { sampleStep(gen); }, config.updateIntervalMs || 100);
+      // Frame pacing: subtract time already spent this iteration so the
+      // wall-clock interval stays close to updateIntervalMs.
+      var elapsed = Date.now() - frameStart;
+      var delay   = Math.max(0, (config.updateIntervalMs || 100) - elapsed);
+      setTimeout(function () { sampleStep(gen); }, delay);
+    }
+
+    function done() {
+      if (stepDone) return; // watchdog already fired
+      stepDone = true;
+      scheduleNext();
     }
 
     try {
@@ -287,10 +310,10 @@ public class LedScriptService : IHostedService, IDisposable
       var colors = computeLedColors();
       if (config.direction === 1) colors.reverse(); // 1 = CounterClockwise
       // Wait for the POST to complete before scheduling the next frame.
-      sendColors(colors).then(scheduleNext, scheduleNext);
+      sendColors(colors).then(done, done);
     } catch (err) {
       // getImageData may throw on DRM-protected content — just reschedule
-      scheduleNext();
+      done();
     }
   }
 
