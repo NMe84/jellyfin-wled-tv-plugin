@@ -354,15 +354,19 @@ public class LedScriptService : IHostedService, IDisposable
       turnOffLeds(); return;
     }
 
+    // Keep the WebSocket warm on every tick regardless of video state.
+    // Previously this was only called from sendColors (inside the readyState
+    // guard), so during HLS startup (readyState=1, stream not yet decoded) the
+    // connection was never re-established after a close, leaving LEDs frozen.
+    openWebSocket();
+
     var frameStart = Date.now();
 
-    // Only sample when the video is actually playing AND has decoded at least
-    // one frame (readyState >= 2 = HAVE_CURRENT_DATA).  Calling drawImage()
-    // on an HLS/MSE video before it has frame data (readyState == 1) triggers
-    // an internal browser state change that causes hls.js to throw an
-    // internalException, which Jellyfin treats as a fatal error and stops
-    // playback.  The videoWidth > 0 check alone is insufficient because HLS
-    // reports dimensions from the manifest before decoding any frames.
+    // Only sample when the video has decoded at least one frame
+    // (readyState >= 2 = HAVE_CURRENT_DATA).  HLS reports videoWidth from the
+    // manifest before any frames are decoded, so videoWidth > 0 alone is not
+    // a safe guard — drawImage on a readyState=1 video triggers an internal
+    // hls.js state change that causes Jellyfin to stop playback.
     if (!video.paused && video.readyState >= 2) {
       try {
         ensureCanvas();
@@ -373,7 +377,13 @@ public class LedScriptService : IHostedService, IDisposable
         if (config.direction === 0) colors.reverse(); // 0 = Clockwise
         sendColors(colors);
       } catch (err) {
-        // getImageData throws on DRM content — skip frame, keep looping
+        // getImageData throws on DRM/cross-origin content — skip frame, keep looping
+      }
+    } else {
+      var _now = Date.now();
+      if (_now - _lastDropLog > 3000) {
+        _lastDropLog = _now;
+        console.log('[wledtv] wait: paused=' + video.paused + ' readyState=' + video.readyState);
       }
     }
 
