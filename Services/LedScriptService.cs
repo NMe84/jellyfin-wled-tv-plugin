@@ -123,8 +123,12 @@ public class LedScriptService : IHostedService, IDisposable
   var config       = null;
   var canvas       = null;
   var ctx          = null;
-  var sampleTimer  = null;
   var lastCfgFetch = 0;
+  // Sequential-loop state: each new loop gets a unique generation number.
+  // Any pending setTimeout from a previous generation sees a mismatch and exits,
+  // so we never have two concurrent loops and requests never pile up.
+  var loopGen     = 0;
+  var loopRunning = false;
 
   // ── Config loading ──────────────────────────────────────────────────────────
 
@@ -240,52 +244,95 @@ public class LedScriptService : IHostedService, IDisposable
   function sendColors(colors) {
     var flat = [];
     colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
-    fetch(getBaseUrl() + '/WledTv/leds', {
+    // Return the promise so the caller can wait for completion (backpressure).
+    return fetch(getBaseUrl() + '/WledTv/leds', {
       method: 'POST',
       headers: {
         'X-Emby-Token': getToken(),
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ brightness: config.brightness, leds: flat })
-    }).catch(function () {});
+    });
   }
 
-  // ── Sampling loop ───────────────────────────────────────────────────────────
+  // ── Sequential sampling loop ─────────────────────────────────────────────────
+  //
+  // Each iteration waits for the WLED POST to complete before scheduling the
+  // next one, so requests never pile up regardless of network latency.
+  // A generation counter (loopGen) lets us safely cancel a loop: any pending
+  // setTimeout that sees a stale generation simply exits without rescheduling.
+
+  function sampleStep(gen) {
+    if (gen !== loopGen || !loopRunning) return; // stale or stopped
+    if (!config || !config.enabled) { loopRunning = false; return; }
+
+    var video = document.querySelector('video');
+
+    // Video element removed → playback stopped entirely, turn off LEDs
+    if (!video || video.ended) { turnOffLeds(); return; }
+
+    // Paused → stop the loop but keep the last colours on the strip
+    if (video.paused || video.videoWidth === 0) { loopRunning = false; return; }
+
+    function scheduleNext() {
+      if (gen !== loopGen || !loopRunning) return;
+      setTimeout(function () { sampleStep(gen); }, config.updateIntervalMs || 100);
+    }
+
+    try {
+      ensureCanvas();
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      var colors = computeLedColors();
+      if (config.direction === 1) colors.reverse(); // 1 = CounterClockwise
+      // Wait for the POST to complete before scheduling the next frame.
+      sendColors(colors).then(scheduleNext, scheduleNext);
+    } catch (err) {
+      // getImageData may throw on DRM-protected content — just reschedule
+      scheduleNext();
+    }
+  }
 
   function startSampling() {
-    if (sampleTimer) return;
-    sampleTimer = setInterval(function () {
-      if (!config || !config.enabled) return;
-      var video = document.querySelector('video');
-      if (!video || video.paused || video.ended || video.videoWidth === 0) return;
-      try {
-        ensureCanvas();
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
-        var colors = computeLedColors();
-        if (config.direction === 1) colors.reverse(); // 1 = CounterClockwise
-        sendColors(colors);
-      } catch (err) {
-        // getImageData may throw on DRM-protected content — suppress silently
-      }
-    }, config ? config.updateIntervalMs : 100);
+    if (loopRunning) return;
+    loopRunning = true;
+    loopGen++;
+    sampleStep(loopGen);
   }
 
   function stopSampling() {
-    if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null; }
+    loopRunning = false;
+    loopGen++;     // invalidates any pending setTimeout callbacks
+  }
+
+  function turnOffLeds() {
+    stopSampling();
+    fetch(getBaseUrl() + '/WledTv/off', {
+      method: 'POST',
+      headers: { 'X-Emby-Token': getToken() }
+    }).catch(function () {});
   }
 
   // ── Page / playback detection ───────────────────────────────────────────────
 
   function checkState() {
     var video = document.querySelector('video');
-    if (video && !video.paused && !video.ended) {
-      if (!sampleTimer) {
+    if (video && !video.paused && !video.ended && video.videoWidth > 0) {
+      // Playing — start loop if not already running
+      if (!loopRunning) {
         loadConfig(function () { if (config && config.enabled) startSampling(); });
       }
     } else {
-      stopSampling();
+      if (loopRunning) {
+        if (!video || video.ended) {
+          // Video gone entirely → turn LEDs off
+          turnOffLeds();
+        } else {
+          // Just paused → stop sampling but keep last colours
+          stopSampling();
+        }
+      }
     }
   }
 

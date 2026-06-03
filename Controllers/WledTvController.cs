@@ -137,6 +137,34 @@ public class WledTvController : ControllerBase
         return NoContent();
     }
 
+    // ── Turn off LEDs ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sends {"on":false} to WLED, turning all LEDs off.
+    /// Called by the client-side script when the user navigates away from a video.
+    /// </summary>
+    [HttpPost("off")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> TurnOff()
+    {
+        if (!Config.Enabled)
+            return NoContent();
+
+        try
+        {
+            var client  = _httpClientFactory.CreateClient();
+            var content = new StringContent("{\"on\":false}", Encoding.UTF8, "application/json");
+            await client.PostAsync(Config.WledUrl.TrimEnd('/') + "/json/state", content).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "WledTv: failed to turn off WLED at {Url}", Config.WledUrl);
+        }
+
+        return NoContent();
+    }
+
     // ── Admin: test connection ────────────────────────────────────────────────
 
     [HttpGet("test")]
