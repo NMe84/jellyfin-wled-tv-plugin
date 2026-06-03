@@ -249,14 +249,20 @@ public class LedScriptService : IHostedService, IDisposable
     if (!config || !config.wledWsUrl) return;
 
     try {
-      ws = new WebSocket(config.wledWsUrl);
-      ws.onclose = function () {
-        ws = null;
-        // Brief back-off before reconnecting to avoid hammering an offline device
-        wsReconnecting = true;
-        setTimeout(function () { wsReconnecting = false; }, 2000);
+      var socket = new WebSocket(config.wledWsUrl);
+      ws = socket;
+      socket.onclose = function () {
+        // Guard against stale closures: if ws has already been replaced by a
+        // newer connection, do NOT overwrite it. Without this, the onclose of
+        // an old socket fires after we've already created a new one, sets
+        // ws = null, and silently kills the replacement connection.
+        if (ws === socket) {
+          ws = null;
+          wsReconnecting = true;
+          setTimeout(function () { wsReconnecting = false; }, 2000);
+        }
       };
-      ws.onerror = function () { /* onclose fires after onerror */ };
+      socket.onerror = function () { /* onclose fires after onerror */ };
     } catch (e) {
       ws = null;
     }
