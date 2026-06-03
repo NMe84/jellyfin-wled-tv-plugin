@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix: LEDs only updating once (loop stopping permanently)\n\nvideo.videoWidth can be 0 during buffering even while not paused.\nThe loop stopped itself and checkState could not restart it because\nits own condition also requires videoWidth > 0. The loop now stays\nalive through transient states, only stopping when the video element\nis fully removed.",
+        "checksum": "cc077dc5d4b94ecd76d1e8eb173d148f",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.9.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-03T22:16:23Z",
+        "version": "0.0.9.0"
+      },
+      {
         "changelog": "Fix: config URL field lookup used old element ID (txtWledUrl) instead of txtWledWsUrl, causing null dereference on every load and save.",
         "checksum": "eb53fe19ed6c55aa8c96a53f9dcfd0d8",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.8.0/Jellyfin.Plugin.WledTv.zip",
@@ -54,14 +62,6 @@
         "targetAbi": "10.11.9.0",
         "timestamp": "2026-06-02T23:02:12Z",
         "version": "0.0.3.0"
-      },
-      {
-        "changelog": "Fix: config page not saving; dark mode dropdown\n\n- Configuration now saves and loads correctly\n- Strip start position dropdown styled for dark mode",
-        "checksum": "83cb67f7c4cf237a5b2c13c12cd27fe0",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.2.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-02T22:55:20Z",
-        "version": "0.0.2.0"
       },
       {
         "changelog": "Initial release",
