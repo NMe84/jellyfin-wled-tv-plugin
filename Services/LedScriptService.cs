@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.WledTv.Services;
 /// <summary>
 /// Registers (and unregisters) the edge-sampling script with the JavaScript Injector plugin.
 /// The script runs inside the Jellyfin web client, samples video pixels along screen edges,
-/// and posts the colours to our /WledTv/leds endpoint which forwards them to WLED.
+/// and sends the colours directly to WLED via WebSocket.
 /// </summary>
 public class LedScriptService : IHostedService, IDisposable
 {
@@ -115,47 +115,109 @@ public class LedScriptService : IHostedService, IDisposable
     // Style notes for this C# verbatim string:
     //   • Only single quotes used in JS to avoid "" escaping.
     //   • No template literals — avoids backtick complications.
-    //   • X-Emby-Token header for Jellyfin auth (no quoting needed).
+    //   • X-Emby-Token header for Jellyfin auth.
     private const string EdgeLightingScript = @"
 (function () {
   'use strict';
 
-  var config       = null;
-  var canvas       = null;
-  var ctx          = null;
-  var lastCfgFetch = 0;
-  var loopGen      = 0;
-  var loopRunning  = false;
-  var ledsOn       = false;
+  // ── State ─────────────────────────────────────────────────────────────────
+  var config     = null;   // last fetched config object
+  var cfgAt      = 0;      // timestamp of last successful fetch
 
-  // ── WebSocket to WLED (direct, no server proxy) ───────────────────────────────
-  var ws              = null;
-  var wsReconnecting  = false;
+  var canvas     = null;
+  var ctx        = null;
 
-  // ── Config loading ──────────────────────────────────────────────────────────
+  var running    = false;  // true while the sampling loop is active
+  var tickTimer  = null;   // handle returned by setTimeout
+  var ledsOn     = false;  // true once we have sent at least one colour frame
 
-  function getBaseUrl() {
+  // WebSocket state — deliberately simple: one live socket, one retry timestamp.
+  var ws         = null;
+  var wsRetryAt  = 0;      // do not attempt (re)connect before this timestamp
+
+  var _logAt     = 0;      // rate-limit helper for the 'wait' diagnostic log
+
+  // ── Config ────────────────────────────────────────────────────────────────
+
+  function baseUrl() {
     return window.ApiClient ? window.ApiClient.serverAddress() : window.location.origin;
   }
-  function getToken() {
+  function authToken() {
     return window.ApiClient ? window.ApiClient.accessToken() : '';
   }
 
   function loadConfig(cb) {
     var now = Date.now();
-    if (config && now - lastCfgFetch < 30000) { cb(); return; }
-    fetch(getBaseUrl() + '/WledTv/config', {
-      headers: { 'X-Emby-Token': getToken() }
-    })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (c) {
-      if (c) { config = c; lastCfgFetch = now; }
-      cb();
-    })
-    .catch(function () { cb(); });
+    if (config && (now - cfgAt) < 30000) { cb(); return; }
+    fetch(baseUrl() + '/WledTv/config', { headers: { 'X-Emby-Token': authToken() } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (c) { if (c) { config = c; cfgAt = now; } cb(); })
+      .catch(function () { cb(); });
   }
 
-  // ── Canvas helpers ──────────────────────────────────────────────────────────
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+
+  // Called on every tick.  Creates a new socket when needed, respecting the
+  // reconnect cooldown.  Idempotent when the socket is already CONNECTING (0)
+  // or OPEN (1).
+  function ensureWs() {
+    if (!config || !config.wledWsUrl) return;
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    if (Date.now() < wsRetryAt) return;
+
+    // Discard any zombie socket before creating a new one.
+    if (ws) { try { ws.close(); } catch (e) {} }
+
+    try {
+      ws = new WebSocket(config.wledWsUrl);
+      ws.onopen  = function () { console.log('[wledtv] ws open'); };
+      ws.onclose = function () {
+        console.log('[wledtv] ws closed, retry in 2s');
+        ws = null;
+        wsRetryAt = Date.now() + 2000;
+      };
+      ws.onerror = function () { /* onclose fires next, handles cleanup */ };
+    } catch (e) {
+      ws = null;
+      wsRetryAt = Date.now() + 2000;
+    }
+  }
+
+  function closeWs() {
+    wsRetryAt = 0;
+    if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  }
+
+  // Attempt a fire-and-forget WebSocket send.  Returns false and resets ws on
+  // error so ensureWs() will reconnect on the next tick.
+  function trySend(payload) {
+    if (!ws || ws.readyState !== 1) return false;
+    if (ws.bufferedAmount > 16000) return false;
+    try {
+      ws.send(JSON.stringify(payload));
+      return true;
+    } catch (e) {
+      ws = null;
+      wsRetryAt = Date.now() + 2000;
+      return false;
+    }
+  }
+
+  function sendColors(colors) {
+    var flat = [];
+    colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
+    trySend({ on: true, bri: config.brightness, seg: [{ i: flat }] });
+  }
+
+  function sendOff() {
+    if (!config) return;
+    var total = (config.horizontalLedCount * 2 + config.verticalLedCount * 2) * 3;
+    var zeros = [];
+    for (var i = 0; i < total; i++) zeros.push(0);
+    trySend({ on: false, seg: [{ i: zeros }] });
+  }
+
+  // ── Canvas / pixel sampling ───────────────────────────────────────────────
 
   function ensureCanvas() {
     if (!canvas) {
@@ -165,209 +227,93 @@ public class LedScriptService : IHostedService, IDisposable
   }
 
   function sampleRegion(x, y, w, h) {
-    // Clamp to canvas bounds
     x = Math.max(0, Math.min(Math.round(x), canvas.width  - 1));
     y = Math.max(0, Math.min(Math.round(y), canvas.height - 1));
     w = Math.max(1, Math.min(Math.round(w), canvas.width  - x));
     h = Math.max(1, Math.min(Math.round(h), canvas.height - y));
     var d = ctx.getImageData(x, y, w, h).data;
     var r = 0, g = 0, b = 0, n = d.length / 4;
-    for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i+1]; b += d[i+2]; }
+    for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
     return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
   }
 
-  // ── LED colour calculation ──────────────────────────────────────────────────
-  //
-  // Colours are always computed in the clockwise order first:
-  //   BottomCenter: right-half of bottom → right side → top → left side → left-half of bottom
-  //   BottomLeft  : full bottom (L→R) → right side → top (R→L) → left side (T→B)
-  //   BottomRight : right side (B→T) → top (R→L) → left side (T→B) → full bottom (L→R)
-  //
-  // For counter-clockwise strips the array is simply reversed: CCW is CW backwards.
-
+  // Colours are always built in clockwise order first:
+  //   BottomCenter: right-half bottom → right → top → left → left-half bottom
+  //   BottomLeft  : full bottom L→R → right B→T → top R→L → left T→B
+  //   BottomRight : right B→T → top R→L → left T→B → full bottom L→R
+  // For counter-clockwise strips the array is reversed (CCW = CW backwards).
   function computeLedColors() {
-    var vw = canvas.width, vh = canvas.height;
-    var h  = config.horizontalLedCount;
-    var v  = config.verticalLedCount;
-    var d  = config.sampleDepth; // fraction of frame to sample from each edge
-    var dw = Math.max(1, Math.round(vw * d));
-    var dh = Math.max(1, Math.round(vh * d));
+    var vw    = canvas.width,  vh = canvas.height;
+    var h     = config.horizontalLedCount;
+    var v     = config.verticalLedCount;
+    var d     = config.sampleDepth;
+    var dw    = Math.max(1, Math.round(vw * d));
+    var dh    = Math.max(1, Math.round(vh * d));
     var start = config.loopStart; // 0=BottomCenter, 1=BottomLeft, 2=BottomRight
 
     var colors = [];
 
-    // Helper: sample the i-th band of n equal bands along a horizontal edge (y fixed)
     function sampleH(i, n, edgeY, edgeH) {
-      var bandW = vw / n;
-      return sampleRegion(i * bandW, edgeY, bandW, edgeH);
+      return sampleRegion((vw / n) * i, edgeY, vw / n, edgeH);
     }
-    // Helper: sample the i-th band of n equal bands along a vertical edge (x fixed)
     function sampleV(i, n, edgeX, edgeW) {
-      var bandH = vh / n;
-      return sampleRegion(edgeX, i * bandH, edgeW, bandH);
+      return sampleRegion(edgeX, (vh / n) * i, edgeW, vh / n);
     }
 
     if (start === 1) {
-      // BottomLeft: bottom L→R, right B→T, top R→L, left T→B
+      // BottomLeft
       for (var i = 0; i < h; i++) colors.push(sampleH(i, h, vh - dh, dh));
       for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
       for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
       for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
-
     } else if (start === 2) {
-      // BottomRight: right B→T, top R→L, left T→B, bottom L→R
+      // BottomRight
       for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
       for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
       for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
       for (var i = 0; i < h; i++) colors.push(sampleH(i, h, vh - dh, dh));
-
     } else {
-      // BottomCenter (default): right-half-bottom→right→top→left→left-half-bottom
+      // BottomCenter (default)
       var hRight = Math.ceil(h / 2);
       var hLeft  = Math.floor(h / 2);
-
-      // Bottom right half: from center (index hLeft) to right (index h-1)
       for (var i = 0; i < hRight; i++) colors.push(sampleH(hLeft + i, h, vh - dh, dh));
-      // Right side: bottom to top
       for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
-      // Top: right to left
       for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
-      // Left side: top to bottom
       for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
-      // Bottom left half: from left (index 0) to center (index hLeft-1)
       for (var i = 0; i < hLeft; i++) colors.push(sampleH(i, h, vh - dh, dh));
     }
 
     return colors;
   }
 
-  // ── WebSocket management ────────────────────────────────────────────────────
-
-  function openWebSocket() {
-    if (wsReconnecting) return;
-    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // CONNECTING or OPEN
-    if (!config || !config.wledWsUrl) return;
-
-    try {
-      var socket = new WebSocket(config.wledWsUrl);
-      ws = socket;
-      socket.onopen  = function () { console.log('[wledtv] ws: opened'); };
-      socket.onclose = function () {
-        var wasCurrent = ws === socket;
-        if (wasCurrent) {
-          ws = null;
-          wsReconnecting = true;
-          setTimeout(function () { wsReconnecting = false; }, 2000);
-        }
-        console.log('[wledtv] ws: closed (current=' + wasCurrent + ', reconn=' + wsReconnecting + ')');
-      };
-      socket.onerror = function () { /* onclose fires after onerror */ };
-    } catch (e) {
-      ws = null;
-    }
-  }
-
-  function closeWebSocket() {
-    wsReconnecting = false;
-    if (ws) {
-      try { ws.close(); } catch (e) {}
-      ws = null;
-    }
-  }
-
-  // ── Colour output (direct WebSocket to WLED) ──────────────────────────────
-
-  var _lastDropLog = 0;
-  var _sentCount   = 0;
-  var _dropCount   = 0;
-
-  function sendColors(colors) {
-    openWebSocket();
-
-    var now = Date.now();
-    var logInterval = 3000; // only log drop reason once every 3 s
-
-    if (!ws || ws.readyState !== 1) {
-      _dropCount++;
-      if (now - _lastDropLog > logInterval) {
-        _lastDropLog = now;
-        console.log('[wledtv] frame drop: ws not ready (state=' +
-          (ws ? ws.readyState : 'null') + '), sent=' + _sentCount + ' dropped=' + _dropCount);
-      }
-      return;
-    }
-
-    if (ws.bufferedAmount > 16000) {
-      _dropCount++;
-      if (now - _lastDropLog > logInterval) {
-        _lastDropLog = now;
-        console.log('[wledtv] frame drop: buffer full (' + ws.bufferedAmount +
-          ' bytes), sent=' + _sentCount + ' dropped=' + _dropCount);
-      }
-      return;
-    }
-
-    var flat = [];
-    colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
-    try {
-      ws.send(JSON.stringify({
-        on:  true,
-        bri: config.brightness,
-        seg: [{ i: flat }]
-      }));
-      _sentCount++;
-    } catch (e) {
-      console.log('[wledtv] ws.send threw: ' + e);
-      ws = null; // force reconnect next frame
-    }
-  }
-
-  function sendOff() {
-    if (!ws || ws.readyState !== 1) return;
-    var total = config.horizontalLedCount * 2 + config.verticalLedCount * 2;
-    var zeros = [];
-    for (var i = 0; i < total * 3; i++) zeros.push(0);
-    try {
-      ws.send(JSON.stringify({ on: false, seg: [{ i: zeros }] }));
-    } catch (e) {}
-  }
-
-  // ── Sampling loop ────────────────────────────────────────────────────────────
+  // ── Main tick ─────────────────────────────────────────────────────────────
   //
-  // WebSocket.send() is synchronous (buffers locally), so there is no
-  // request/response cycle to wait for. The loop just paces itself to
-  // updateIntervalMs wall-clock time, accounting for how long canvas
-  // sampling took.
+  // Design principles:
+  //   • running + tickTimer are the only loop controls (no generation counter).
+  //   • ensureWs() is always called, regardless of video readyState, so the
+  //     connection stays warm during HLS buffering / startup.
+  //   • drawImage is guarded by readyState >= 2 (HAVE_CURRENT_DATA) to avoid
+  //     touching MSE video before it has decoded its first frame.
 
-  function sampleStep(gen) {
-    if (gen !== loopGen || !loopRunning) return;
-    if (!config || !config.enabled) {
-      console.log('[wledtv] stopping: config disabled');
-      stopSampling(); return;
-    }
+  function tick() {
+    tickTimer = null;
+    if (!running) return;
 
+    // Stop if plugin was disabled mid-playback
+    if (!config || !config.enabled) { stop(true); return; }
+
+    // Stop (and turn off LEDs) when the video element is gone or ended
     var video = document.querySelector('video');
+    if (!video || video.ended) { stop(true); return; }
 
-    // Video gone entirely → turn LEDs off and stop
-    if (!video || video.ended) {
-      console.log('[wledtv] stopping: video ' + (video ? 'ended' : 'gone'));
-      turnOffLeds(); return;
-    }
+    // Always maintain the WebSocket regardless of video state so we are ready
+    // to send as soon as readyState reaches HAVE_CURRENT_DATA (2).
+    ensureWs();
 
-    // Keep the WebSocket warm on every tick regardless of video state.
-    // Previously this was only called from sendColors (inside the readyState
-    // guard), so during HLS startup (readyState=1, stream not yet decoded) the
-    // connection was never re-established after a close, leaving LEDs frozen.
-    openWebSocket();
+    var elapsed = 0;
 
-    var frameStart = Date.now();
-
-    // Only sample when the video has decoded at least one frame
-    // (readyState >= 2 = HAVE_CURRENT_DATA).  HLS reports videoWidth from the
-    // manifest before any frames are decoded, so videoWidth > 0 alone is not
-    // a safe guard — drawImage on a readyState=1 video triggers an internal
-    // hls.js state change that causes Jellyfin to stop playback.
     if (!video.paused && video.readyState >= 2) {
+      var t0 = Date.now();
       try {
         ensureCanvas();
         canvas.width  = video.videoWidth;
@@ -376,61 +322,61 @@ public class LedScriptService : IHostedService, IDisposable
         var colors = computeLedColors();
         if (config.direction === 0) colors.reverse(); // 0 = Clockwise
         sendColors(colors);
-      } catch (err) {
-        // getImageData throws on DRM/cross-origin content — skip frame, keep looping
+        ledsOn = true;
+      } catch (e) {
+        // drawImage / getImageData throws on DRM content — skip frame, keep looping
       }
+      elapsed = Date.now() - t0;
     } else {
-      var _now = Date.now();
-      if (_now - _lastDropLog > 3000) {
-        _lastDropLog = _now;
-        console.log('[wledtv] wait: paused=' + video.paused + ' readyState=' + video.readyState);
+      // Log why we are waiting (rate-limited to once every 3 s)
+      var now = Date.now();
+      if (now - _logAt > 3000) {
+        _logAt = now;
+        console.log('[wledtv] wait: paused=' + video.paused +
+          ' readyState=' + video.readyState +
+          ' ws=' + (ws ? ws.readyState : 'null') +
+          ' wsRetry=' + Math.max(0, wsRetryAt - now) + 'ms');
       }
     }
 
-    if (gen !== loopGen || !loopRunning) return;
-    var elapsed = Date.now() - frameStart;
-    var delay   = Math.max(0, (config.updateIntervalMs || 100) - elapsed);
-    setTimeout(function () { sampleStep(gen); }, delay);
+    if (!running) return;
+    var interval = config.updateIntervalMs || 100;
+    tickTimer = setTimeout(tick, Math.max(0, interval - elapsed));
   }
 
-  function startSampling() {
-    if (loopRunning) return;
-    loopRunning = true;
-    ledsOn = true;
-    loopGen++;
-    openWebSocket();
-    console.log('[wledtv] loop started (gen=' + loopGen + ')');
-    sampleStep(loopGen);
+  function start() {
+    if (running) return;
+    running = true;
+    ledsOn  = false;
+    console.log('[wledtv] start');
+    tick(); // first tick immediately
   }
 
-  function stopSampling() {
-    loopRunning = false;
-    loopGen++;
+  // turnOff=true  → send LEDs-off and close WebSocket before stopping
+  // turnOff=false → just stop the loop (e.g. when disabled via config)
+  function stop(turnOff) {
+    if (!running && !turnOff) return;
+    running = false;
+    if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    console.log('[wledtv] stop (off=' + !!turnOff + ')');
+    if (turnOff && ledsOn) { sendOff(); ledsOn = false; }
+    if (turnOff) closeWs();
   }
 
-  function turnOffLeds() {
-    var wasOn = ledsOn;
-    stopSampling();
-    if (!wasOn) return;
-    ledsOn = false;
-    sendOff();
-    closeWebSocket();
-  }
+  // ── Poll ─────────────────────────────────────────────────────────────────
+  // Fires every second.  Starts the loop when a playing video is detected.
+  // Never stops the loop — that is handled exclusively inside tick().
 
-  // ── Page / playback detection ───────────────────────────────────────────────
-  // checkState is ONLY responsible for starting the loop when a video appears.
-  // Stopping is handled exclusively by sampleStep — avoids false stops when
-  // document.querySelector('video') transiently returns null mid-playback.
-
-  function checkState() {
+  function poll() {
+    if (running) return;
     var video = document.querySelector('video');
-    if (video && !video.ended && !loopRunning) {
-      loadConfig(function () { if (config && config.enabled) startSampling(); });
+    if (video && !video.ended) {
+      loadConfig(function () { if (config && config.enabled) start(); });
     }
   }
 
-  setInterval(checkState, 1000);
-  checkState();
+  setInterval(poll, 1000);
+  poll();
 })();
 ";
 }
