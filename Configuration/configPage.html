@@ -219,19 +219,26 @@
             // Load device list and populate the dropdown
             return apiFetch('/Devices').then(function (result) {
                 var devices = (result && result.Items) || [];
-                devices.forEach(function (dev) {
-                    var opt    = document.createElement('option');
-                    opt.value  = dev.Id;
-                    var label  = dev.Name || dev.Id;
-                    // Append app name when it adds useful disambiguation
+
+                // Build labelled entries, then sort alphabetically before adding to DOM
+                var entries = devices.map(function (dev) {
+                    var label = dev.Name || dev.Id;
                     if (dev.AppName && dev.AppName !== dev.Name) {
                         label += ' (' + dev.AppName + ')';
                     }
-                    // Mark the browser we are currently running in
                     if (dev.Id === currentDeviceId) {
                         label += ' (this device)';
+                    } else if (dev.LastUserName) {
+                        label += ' (' + dev.LastUserName + ')';
                     }
-                    opt.textContent = label;
+                    return { id: dev.Id, label: label };
+                });
+                entries.sort(function (a, b) { return a.label.localeCompare(b.label); });
+
+                entries.forEach(function (entry) {
+                    var opt         = document.createElement('option');
+                    opt.value       = entry.id;
+                    opt.textContent = entry.label;
                     selDevice.appendChild(opt);
                 });
                 selDevice.value = savedDeviceId;
