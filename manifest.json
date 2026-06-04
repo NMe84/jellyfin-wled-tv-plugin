@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Auto-detect letterbox/pillarbox bars.\n\nScans the current frame at 64x64 resolution every 2 s to find the edges of the actual picture area, then restricts all LED colour sampling to that area. Handles static bars and dynamic aspect-ratio changes mid-video.",
+        "checksum": "2359ed8fcb7ee51118baa50c4e826572",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.17.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-04T21:35:44Z",
+        "version": "0.0.17.0"
+      },
+      {
         "changelog": "Reduce unexpected-close retry from 2s to 200ms; add ws error/close code logging.\n\nWhile the root cause (mock closing connections after color data) is investigated separately, this makes the visible gap much shorter. The close code logged in DevTools will reveal exactly why the browser is closing.",
         "checksum": "4ac3209acd8b20dfaf4bd6cff2f41309",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.16.0/Jellyfin.Plugin.WledTv.zip",
