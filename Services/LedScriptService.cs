@@ -174,19 +174,23 @@ public class LedScriptService : IHostedService, IDisposable
       ws = new WebSocket(config.wledWsUrl);
       ws.onopen    = function () { console.log('[wledtv] ws open'); };
       ws.onmessage = function () { /* discard WLED state-broadcast responses */ };
-      ws.onclose   = function () {
+      ws.onclose   = function (ev) {
         ws = null;
         if (wsClosing) {
           // We initiated this close — reconnect immediately (no penalty delay).
           console.log('[wledtv] ws closed (deliberate)');
         } else {
-          // Remote/network close — back off before reconnecting.
-          wsRetryAt = Date.now() + 2000;
-          console.log('[wledtv] ws closed unexpectedly, retry in 2s');
+          // Remote/network close — short back-off before reconnecting.
+          // Keep this small: the mock closes after every color frame, so a long
+          // delay means a long visible gap in LED updates.
+          wsRetryAt = Date.now() + 200;
+          console.log('[wledtv] ws closed unexpectedly (code=' + ev.code + '), retry in 200ms');
         }
         wsClosing = false;
       };
-      ws.onerror   = function () { /* onclose fires next, handles cleanup */ };
+      ws.onerror   = function (ev) {
+        console.log('[wledtv] ws error: ' + (ev.message || ev.type || 'unknown'));
+      };
     } catch (e) {
       ws = null;
       wsRetryAt = Date.now() + 2000;
