@@ -139,6 +139,12 @@ public class LedScriptService : IHostedService, IDisposable
 
   var _logAt       = 0;      // rate-limit helper for the 'wait' diagnostic log
 
+  // Letterbox / pillarbox detection
+  var contentBounds = null;  // { top, bottom, left, right } canvas px; null = full frame
+  var boundsCanvas  = null;
+  var boundsCtx     = null;
+  var lastBoundsAt  = 0;
+
   // ── Config ────────────────────────────────────────────────────────────────
 
   function baseUrl() {
@@ -241,6 +247,53 @@ public class LedScriptService : IHostedService, IDisposable
     }
   }
 
+  // ── Letterbox / pillarbox detection ──────────────────────────────────────
+  //
+  // Draws the current frame to a tiny 64×64 canvas and scans rows/columns
+  // for black bars.  Running at 1/64 resolution keeps this under 1 ms.
+  // Called every 2 s so dynamic aspect-ratio changes are picked up quickly.
+
+  function ensureBoundsCanvas() {
+    if (!boundsCanvas) {
+      boundsCanvas        = document.createElement('canvas');
+      boundsCanvas.width  = 64;
+      boundsCanvas.height = 64;
+      boundsCtx = boundsCanvas.getContext('2d', { willReadFrequently: true });
+    }
+  }
+
+  function detectContentBounds() {
+    ensureBoundsCanvas();
+    var sw = canvas.width, sh = canvas.height;
+    boundsCtx.drawImage(canvas, 0, 0, sw, sh, 0, 0, 64, 64);
+    var d = boundsCtx.getImageData(0, 0, 64, 64).data;
+    var T = 16; // per-channel threshold — bars are near 0, real content is brighter
+
+    function rowBlack(y) {
+      var base = y * 64 * 4;
+      for (var x = 0; x < 64; x++) {
+        var i = base + x * 4;
+        if (d[i] > T || d[i+1] > T || d[i+2] > T) return false;
+      }
+      return true;
+    }
+    function colBlack(x) {
+      for (var y = 0; y < 64; y++) {
+        var i = (y * 64 + x) * 4;
+        if (d[i] > T || d[i+1] > T || d[i+2] > T) return false;
+      }
+      return true;
+    }
+
+    var top = 0, bottom = sh, left = 0, right = sw;
+    for (var y = 0; y < 64; y++)  { if (!rowBlack(y))  { top    = Math.round(y       * sh / 64); break; } }
+    for (var y = 63; y >= 0; y--) { if (!rowBlack(y))  { bottom = Math.round((y + 1) * sh / 64); break; } }
+    for (var x = 0; x < 64; x++)  { if (!colBlack(x))  { left   = Math.round(x       * sw / 64); break; } }
+    for (var x = 63; x >= 0; x--) { if (!colBlack(x))  { right  = Math.round((x + 1) * sw / 64); break; } }
+
+    return { top: top, bottom: bottom, left: left, right: right };
+  }
+
   function sampleRegion(x, y, w, h) {
     x = Math.max(0, Math.min(Math.round(x), canvas.width  - 1));
     y = Math.max(0, Math.min(Math.round(y), canvas.height - 1));
@@ -258,7 +311,12 @@ public class LedScriptService : IHostedService, IDisposable
   //   BottomRight : right B→T → top R→L → left T→B → full bottom L→R
   // For counter-clockwise strips the array is reversed (CCW = CW backwards).
   function computeLedColors() {
-    var vw    = canvas.width,  vh = canvas.height;
+    // Honour detected content bounds so bars are excluded from sampling.
+    var b  = contentBounds;
+    var bx = b ? b.left              : 0;
+    var by = b ? b.top               : 0;
+    var vw = b ? (b.right  - b.left) : canvas.width;
+    var vh = b ? (b.bottom - b.top)  : canvas.height;
     var h     = config.horizontalLedCount;
     var v     = config.verticalLedCount;
     var d     = config.sampleDepth;
@@ -269,10 +327,10 @@ public class LedScriptService : IHostedService, IDisposable
     var colors = [];
 
     function sampleH(i, n, edgeY, edgeH) {
-      return sampleRegion((vw / n) * i, edgeY, vw / n, edgeH);
+      return sampleRegion(bx + (vw / n) * i, by + edgeY, vw / n, edgeH);
     }
     function sampleV(i, n, edgeX, edgeW) {
-      return sampleRegion(edgeX, (vh / n) * i, edgeW, vh / n);
+      return sampleRegion(bx + edgeX, by + (vh / n) * i, edgeW, vh / n);
     }
 
     if (start === 1) {
@@ -361,6 +419,13 @@ public class LedScriptService : IHostedService, IDisposable
         canvas.width  = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
+        // Re-detect content bounds every 2 s.  This handles both static bars
+        // (letterbox/pillarbox) and dynamic aspect-ratio changes mid-video.
+        var tFrame = Date.now();
+        if (tFrame - lastBoundsAt > 2000) {
+          contentBounds = detectContentBounds();
+          lastBoundsAt  = tFrame;
+        }
         var colors = computeLedColors();
         if (config.direction === 0) colors.reverse(); // 0 = Clockwise
         sendColors(colors);
