@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Reduce unexpected-close retry from 2s to 200ms; add ws error/close code logging.\n\nWhile the root cause (mock closing connections after color data) is investigated separately, this makes the visible gap much shorter. The close code logged in DevTools will reveal exactly why the browser is closing.",
+        "checksum": "4ac3209acd8b20dfaf4bd6cff2f41309",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.16.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-04T07:54:38Z",
+        "version": "0.0.16.0"
+      },
+      {
         "changelog": "Fix: LEDs flicker every 2 seconds instead of updating continuously.\n\n- Stop is now debounced: requires 3 consecutive ticks (~300ms) with no video before stopping, tolerating HLS segment boundaries\n- Deliberate closes (stop → closeWs) no longer impose the 2-second reconnect penalty\n- Video lookup now also checks same-origin iframes (Jellyfin ViewManager)",
         "checksum": "53d04ebbb3722a1b4f134953f97b1696",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.15.0/Jellyfin.Plugin.WledTv.zip",
