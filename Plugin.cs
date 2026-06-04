@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
@@ -19,6 +20,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+    }
+
+    public override Stream? GetThumbImage()
+    {
+        var type = GetType();
+        return type.Assembly.GetManifestResourceStream($"{type.Namespace}.wledtv.png");
     }
 
     public IEnumerable<PluginPageInfo> GetPages() =>

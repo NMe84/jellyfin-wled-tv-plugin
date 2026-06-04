@@ -1,4 +1,4 @@
-# WLED TV — Edge Lighting for Jellyfin
+<img src="https://raw.githubusercontent.com/NMe84/jellyfin-wled-tv-plugin/master/wledtv.png" height="32"> WLED TV — Edge Lighting for Jellyfin
 
 A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real time based on the colours at the edges of whatever is playing. The browser samples pixel colours directly from the video element and sends them to WLED via WebSocket — no server proxy, no extra software.
 
