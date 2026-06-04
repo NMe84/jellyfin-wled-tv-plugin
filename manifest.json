@@ -3,10 +3,19 @@
     "category": "General",
     "description": "Drive a WLED LED strip from video content playing in Jellyfin",
     "guid": "a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1",
+    "imageUrl": "https://raw.githubusercontent.com/NMe84/jellyfin-wled-tv-plugin/master/wledtv.png",
     "name": "WLED TV",
     "overview": "Samples pixel colours along the edges of the playing video and sends them to a WLED controller in real time, creating an immersive edge-lighting effect that reacts to the content on screen.\n",
     "owner": "nme84",
     "versions": [
+      {
+        "changelog": "Add plugin icon (shown in Jellyfin's plugin catalogue).",
+        "checksum": "b8418245e3670493558b6d0f43935284",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.0.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-04T22:49:35Z",
+        "version": "1.0.1.0"
+      },
       {
         "changelog": "First stable release.\n\nFull-featured WLED edge-lighting plugin for Jellyfin:\n- Direct browser → WLED WebSocket connection\n- Auto-detects letterbox/pillarbox bars; samples only the actual picture area\n- Per-device restriction: limit edge lighting to one specific Jellyfin client\n- Inline connection test against the live URL input value\n- Clockwise/counter-clockwise strip direction, configurable start position\n- Adjustable brightness, sample depth, and update rate",
         "checksum": "8f8947b66d284a62d5c3600455b1950c",
