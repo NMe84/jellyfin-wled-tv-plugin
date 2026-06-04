@@ -121,21 +121,23 @@ public class LedScriptService : IHostedService, IDisposable
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  var config     = null;   // last fetched config object
-  var cfgAt      = 0;      // timestamp of last successful fetch
+  var config       = null;   // last fetched config object
+  var cfgAt        = 0;      // timestamp of last successful fetch
 
-  var canvas     = null;
-  var ctx        = null;
+  var canvas       = null;
+  var ctx          = null;
 
-  var running    = false;  // true while the sampling loop is active
-  var tickTimer  = null;   // handle returned by setTimeout
-  var ledsOn     = false;  // true once we have sent at least one colour frame
+  var running      = false;  // true while the sampling loop is active
+  var tickTimer    = null;   // handle returned by setTimeout
+  var ledsOn       = false;  // true once we have sent at least one colour frame
+  var noVideoTicks = 0;      // consecutive ticks with no usable video element
 
   // WebSocket state — deliberately simple: one live socket, one retry timestamp.
-  var ws         = null;
-  var wsRetryAt  = 0;      // do not attempt (re)connect before this timestamp
+  var ws           = null;
+  var wsRetryAt    = 0;      // do not attempt (re)connect before this timestamp
+  var wsClosing    = false;  // true when WE initiated the close (suppress retry delay)
 
-  var _logAt     = 0;      // rate-limit helper for the 'wait' diagnostic log
+  var _logAt       = 0;      // rate-limit helper for the 'wait' diagnostic log
 
   // ── Config ────────────────────────────────────────────────────────────────
 
@@ -170,13 +172,21 @@ public class LedScriptService : IHostedService, IDisposable
 
     try {
       ws = new WebSocket(config.wledWsUrl);
-      ws.onopen  = function () { console.log('[wledtv] ws open'); };
-      ws.onclose = function () {
-        console.log('[wledtv] ws closed, retry in 2s');
+      ws.onopen    = function () { console.log('[wledtv] ws open'); };
+      ws.onmessage = function () { /* discard WLED state-broadcast responses */ };
+      ws.onclose   = function () {
         ws = null;
-        wsRetryAt = Date.now() + 2000;
+        if (wsClosing) {
+          // We initiated this close — reconnect immediately (no penalty delay).
+          console.log('[wledtv] ws closed (deliberate)');
+        } else {
+          // Remote/network close — back off before reconnecting.
+          wsRetryAt = Date.now() + 2000;
+          console.log('[wledtv] ws closed unexpectedly, retry in 2s');
+        }
+        wsClosing = false;
       };
-      ws.onerror = function () { /* onclose fires next, handles cleanup */ };
+      ws.onerror   = function () { /* onclose fires next, handles cleanup */ };
     } catch (e) {
       ws = null;
       wsRetryAt = Date.now() + 2000;
@@ -184,6 +194,7 @@ public class LedScriptService : IHostedService, IDisposable
   }
 
   function closeWs() {
+    wsClosing = true;   // tell onclose not to impose a retry delay
     wsRetryAt = 0;
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   }
@@ -302,9 +313,36 @@ public class LedScriptService : IHostedService, IDisposable
     // Stop if plugin was disabled mid-playback
     if (!config || !config.enabled) { stop(true); return; }
 
-    // Stop (and turn off LEDs) when the video element is gone or ended
+    // Find the active video element.  Jellyfin may render the player inside a
+    // same-origin iframe (ViewManager), so check those too.
     var video = document.querySelector('video');
-    if (!video || video.ended) { stop(true); return; }
+    if (!video) {
+      var frames = document.querySelectorAll('iframe');
+      for (var fi = 0; fi < frames.length && !video; fi++) {
+        try { video = frames[fi].contentDocument && frames[fi].contentDocument.querySelector('video'); }
+        catch (e) {}
+      }
+    }
+
+    // Stop only after 3 consecutive ticks (~300 ms) with no usable video.
+    // A single missing tick is normal during HLS segment boundaries, quality
+    // switches, and Jellyfin view transitions — stopping immediately caused the
+    // 2-second reconnect cycle seen in practice.
+    if (!video || video.ended) {
+      noVideoTicks++;
+      if (noVideoTicks >= 3) {
+        noVideoTicks = 0;
+        console.log('[wledtv] no video for 3 ticks, stopping');
+        stop(true);
+        return;
+      }
+      // Keep WebSocket warm while waiting; check again next tick.
+      ensureWs();
+      if (!running) return;
+      tickTimer = setTimeout(tick, config.updateIntervalMs || 100);
+      return;
+    }
+    noVideoTicks = 0;
 
     // Always maintain the WebSocket regardless of video state so we are ready
     // to send as soon as readyState reaches HAVE_CURRENT_DATA (2).
