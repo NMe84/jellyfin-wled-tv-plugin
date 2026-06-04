@@ -11,5 +11,6 @@ overview: >
   effect that reacts to the content on screen.
 owner: "nme84"
 category: "General"
+imageUrl: "https://raw.githubusercontent.com/NMe84/jellyfin-wled-tv-plugin/master/wledtv.png"
 artifacts:
   - "Jellyfin.Plugin.WledTv.dll"
