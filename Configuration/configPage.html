@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <title>WLED TV</title>
@@ -25,13 +25,35 @@
                     </label>
                 </div>
 
-                <!-- WLED API URL -->
+                <!-- Active device -->
+                <div class="inputContainer" style="margin-bottom:1.5em;">
+                    <label class="inputLabel inputLabelUnfocused" for="selDeviceId">Active on device</label>
+                    <select id="selDeviceId" is="emby-select" class="emby-select"
+                            style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
+                        <option value="">Any device</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Restrict edge lighting to one specific Jellyfin client. Useful when multiple devices share this
+                        server but only one TV has an LED strip attached. Select "Any device" to run everywhere.
+                    </div>
+                </div>
+
+                <!-- WLED WebSocket URL + inline Test button -->
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="txtWledWsUrl">WLED WebSocket URL</label>
-                    <input type="text" id="txtWledWsUrl" is="emby-input" class="emby-input"
-                           placeholder="ws://192.168.1.50/ws" autocomplete="off">
-                    <div class="fieldDescription">Full WebSocket DSN including protocol, host, port and path. The browser connects to this directly — no server proxy.</div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="txtWledWsUrl" is="emby-input" class="emby-input"
+                               placeholder="ws://192.168.1.50/ws" autocomplete="off"
+                               style="flex:1;min-width:0;margin:0;">
+                        <button type="button" id="btnTest" class="raised emby-button"
+                                style="white-space:nowrap;flex-shrink:0;">Test</button>
+                    </div>
+                    <div class="fieldDescription">
+                        Full WebSocket address of your WLED device. The browser connects directly — no server proxy.
+                        The Test button checks the URL currently shown in the field above.
+                    </div>
                 </div>
+                <div id="wledTestResult" style="margin-top:4px;margin-bottom:8px;font-size:.85em;display:none;"></div>
 
                 <!-- LED counts -->
                 <div style="display:flex;gap:16px;flex-wrap:wrap;">
@@ -68,7 +90,7 @@
                             <option value="0">Clockwise</option>
                             <option value="1">Counter-clockwise</option>
                         </select>
-                        <div class="fieldDescription">Which way the strip runs from the start point (when viewed from the front of the TV).</div>
+                        <div class="fieldDescription">Which way the strip runs from the start point (viewed from the front of the TV).</div>
                     </div>
                 </div>
 
@@ -104,13 +126,10 @@
                     Total LEDs: <strong id="lblTotal">0</strong>
                 </p>
 
-                <!-- Actions -->
-                <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:1em;">
+                <!-- Save -->
+                <div style="margin-top:1em;">
                     <button type="submit" class="raised button-submit emby-button">Save</button>
-                    <button type="button" id="btnTest" class="raised emby-button">Test connection</button>
                 </div>
-
-                <div id="wledTestResult" style="margin-top:12px;font-size:.85em;display:none;"></div>
 
             </form>
         </div>
@@ -119,8 +138,6 @@
 <script type="text/javascript">
 'use strict';
 (function () {
-
-    var PLUGIN_ID = 'a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1';
 
     function getBase() {
         return window.ApiClient ? window.ApiClient.serverAddress() : window.location.origin;
@@ -139,12 +156,6 @@
         });
     }
 
-    // ── All DOM lookups and event registrations happen inside pageshow ──────────
-    // This matches the pattern required by Jellyfin's admin page system: the
-    // pageshow event fires after the page div is fully in the live document,
-    // guaranteeing that getElementById calls succeed. Doing them earlier (at
-    // IIFE execution time) can return null, causing a silent TypeError that
-    // prevents the pageshow listener itself from being registered.
     document.addEventListener('pageshow', function (e) {
         if (e.target.id !== 'WledTvConfigPage') return;
 
@@ -152,7 +163,10 @@
         var banner    = document.getElementById('wledBanner');
         var form      = document.getElementById('wledConfigForm');
         var chkEn     = document.getElementById('chkEnabled');
+        var selDevice = document.getElementById('selDeviceId');
         var txtUrl    = document.getElementById('txtWledWsUrl');
+        var btnTest   = document.getElementById('btnTest');
+        var testOut   = document.getElementById('wledTestResult');
         var numH      = document.getElementById('numHLeds');
         var numV      = document.getElementById('numVLeds');
         var selStart  = document.getElementById('selLoopStart');
@@ -163,8 +177,8 @@
         var lblDepth  = document.getElementById('lblSampleDepth');
         var lblBri    = document.getElementById('lblBrightness');
         var lblTotal  = document.getElementById('lblTotal');
-        var btnTest   = document.getElementById('btnTest');
-        var testOut   = document.getElementById('wledTestResult');
+
+        var currentDeviceId = window.ApiClient ? window.ApiClient.deviceId() : '';
 
         // ── Helpers ──────────────────────────────────────────────────────────
         function showBanner(msg, ok) {
@@ -184,25 +198,50 @@
         numH.addEventListener('input', updateSummary);
         numV.addEventListener('input', updateSummary);
 
-        // ── Load config ───────────────────────────────────────────────────────
+        // ── Load settings + devices ───────────────────────────────────────────
         apiFetch('/WledTv/settings')
         .then(function (cfg) {
             chkEn.checked        = cfg.enabled !== false;
             txtUrl.value         = cfg.wledWsUrl           || '';
-            numH.value           = cfg.horizontalLedCount || 32;
-            numV.value           = cfg.verticalLedCount   || 18;
-            selStart.value       = String(cfg.loopStart   || 0);
-            selDir.value         = String(cfg.direction   !== undefined ? cfg.direction : 1);
+            numH.value           = cfg.horizontalLedCount  || 32;
+            numV.value           = cfg.verticalLedCount    || 18;
+            selStart.value       = String(cfg.loopStart    || 0);
+            selDir.value         = String(cfg.direction    !== undefined ? cfg.direction : 1);
             rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
-            rngBri.value         = cfg.brightness         || 128;
-            numMs.value          = cfg.updateIntervalMs   || 100;
+            rngBri.value         = cfg.brightness          || 128;
+            numMs.value          = cfg.updateIntervalMs    || 100;
             lblDepth.textContent = rngDepth.value;
             lblBri.textContent   = rngBri.value;
             updateSummary();
+
+            var savedDeviceId = cfg.deviceId || '';
+
+            // Load device list and populate the dropdown
+            return apiFetch('/Devices').then(function (result) {
+                var devices = (result && result.Items) || [];
+                devices.forEach(function (dev) {
+                    var opt    = document.createElement('option');
+                    opt.value  = dev.Id;
+                    var label  = dev.Name || dev.Id;
+                    // Append app name when it adds useful disambiguation
+                    if (dev.AppName && dev.AppName !== dev.Name) {
+                        label += ' (' + dev.AppName + ')';
+                    }
+                    // Mark the browser we are currently running in
+                    if (dev.Id === currentDeviceId) {
+                        label += ' (this device)';
+                    }
+                    opt.textContent = label;
+                    selDevice.appendChild(opt);
+                });
+                selDevice.value = savedDeviceId;
+            }).catch(function () {
+                // Device list unavailable — still functional, just no dropdown choices
+            });
         })
         .catch(function (err) { showBanner('Failed to load: ' + err.message, false); });
 
-        // ── Save config ───────────────────────────────────────────────────────
+        // ── Save ─────────────────────────────────────────────────────────────
         form.addEventListener('submit', function (ev) {
             ev.preventDefault();
             apiFetch('/WledTv/settings', {
@@ -216,31 +255,56 @@
                     direction:          parseInt(selDir.value),
                     sampleDepth:        parseInt(rngDepth.value) / 100,
                     brightness:         parseInt(rngBri.value),
-                    updateIntervalMs:   parseInt(numMs.value)
+                    updateIntervalMs:   parseInt(numMs.value),
+                    deviceId:           selDevice.value
                 })
             })
             .then(function () { showBanner('Configuration saved.', true); })
             .catch(function (err) { showBanner('Save failed: ' + err.message, false); });
         });
 
-        // ── Test connection ───────────────────────────────────────────────────
+        // ── Test connection (client-side WebSocket) ───────────────────────────
+        // Tests the URL currently in the input field, not whatever was last saved.
+        // This is a direct browser → WLED connection, matching actual runtime behaviour.
         btnTest.addEventListener('click', function () {
-            testOut.textContent   = 'Testing…';
-            testOut.style.display = 'block';
-            apiFetch('/WledTv/test')
-            .then(function (r) {
-                testOut.style.color = r.success ? '#27ae60' : '#f44336';
-                testOut.textContent = r.success
-                    ? 'Connected! WLED responded with HTTP ' + r.status + '.'
-                    : 'Failed (HTTP ' + r.status + '): ' + r.body;
-            })
-            .catch(function (err) {
-                testOut.style.color = '#f44336';
-                testOut.textContent = 'Error: ' + err.message;
-            });
-        });
+            var url = txtUrl.value.trim();
+            if (!url) {
+                testOut.style.color   = '#f44336';
+                testOut.textContent   = 'Enter a WebSocket URL first.';
+                testOut.style.display = 'block';
+                return;
+            }
 
-        // (pageshow replaces the old separate init block below)
+            testOut.textContent   = 'Connecting to ' + url + '…';
+            testOut.style.color   = '#888';
+            testOut.style.display = 'block';
+            btnTest.disabled      = true;
+
+            var done = false;
+            var ws;
+
+            function finish(ok, msg) {
+                if (done) return;
+                done             = true;
+                btnTest.disabled = false;
+                clearTimeout(timer);
+                testOut.style.color = ok ? '#27ae60' : '#f44336';
+                testOut.textContent = msg;
+                if (ws && ws.readyState <= 1) { try { ws.close(); } catch (ex) {} }
+            }
+
+            var timer = setTimeout(function () {
+                finish(false, 'Timed out — no response from ' + url);
+            }, 5000);
+
+            try {
+                ws          = new WebSocket(url);
+                ws.onopen   = function () { finish(true,  'Connected to ' + url); };
+                ws.onerror  = function () { finish(false, 'Connection refused or network error: ' + url); };
+            } catch (ex) {
+                finish(false, 'Invalid URL: ' + ex.message);
+            }
+        });
     });
 })();
 </script>

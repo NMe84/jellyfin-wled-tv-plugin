@@ -121,6 +121,9 @@ public class LedScriptService : IHostedService, IDisposable
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
+  // Resolved once at startup — device ID never changes during a session.
+  var _myDeviceId  = window.ApiClient ? window.ApiClient.deviceId() : '';
+
   var config       = null;   // last fetched config object
   var cfgAt        = 0;      // timestamp of last successful fetch
 
@@ -372,8 +375,9 @@ public class LedScriptService : IHostedService, IDisposable
     tickTimer = null;
     if (!running) return;
 
-    // Stop if plugin was disabled mid-playback
+    // Stop if plugin was disabled mid-playback, or if this is the wrong device
     if (!config || !config.enabled) { stop(true); return; }
+    if (config.deviceId && config.deviceId !== '' && _myDeviceId !== config.deviceId) { stop(true); return; }
 
     // Find the active video element.  Jellyfin may render the player inside a
     // same-origin iframe (ViewManager), so check those too.
@@ -478,7 +482,11 @@ public class LedScriptService : IHostedService, IDisposable
     if (running) return;
     var video = document.querySelector('video');
     if (video && !video.ended) {
-      loadConfig(function () { if (config && config.enabled) start(); });
+      loadConfig(function () {
+        if (!config || !config.enabled) return;
+        if (config.deviceId && config.deviceId !== '' && _myDeviceId !== config.deviceId) return;
+        start();
+      });
     }
   }
 

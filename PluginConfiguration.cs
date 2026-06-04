@@ -30,6 +30,12 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Whether the plugin is active.</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Jellyfin device ID that should run the edge-lighting script.
+    /// Empty string means "all devices" (the original behaviour).
+    /// </summary>
+    public string DeviceId { get; set; } = string.Empty;
 }
 
 public enum LedLoopStart

@@ -43,7 +43,8 @@ public class WledTvController : ControllerBase
             direction          = (int)Config.Direction,
             sampleDepth        = Config.SampleDepth,
             updateIntervalMs   = Config.UpdateIntervalMs,
-            brightness         = Config.Brightness
+            brightness         = Config.Brightness,
+            deviceId           = Config.DeviceId
         });
 
     // ── Admin settings endpoints (used by the config page) ───────────────────
@@ -62,7 +63,8 @@ public class WledTvController : ControllerBase
             direction          = (int)Config.Direction,
             sampleDepth        = Config.SampleDepth,
             updateIntervalMs   = Config.UpdateIntervalMs,
-            brightness         = Config.Brightness
+            brightness         = Config.Brightness,
+            deviceId           = Config.DeviceId
         });
 
     [HttpPost("settings")]
@@ -80,6 +82,7 @@ public class WledTvController : ControllerBase
         cfg.SampleDepth        = Math.Clamp(s.SampleDepth, 0.01, 0.5);
         cfg.UpdateIntervalMs   = Math.Max(40, s.UpdateIntervalMs);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
+        cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
     }
@@ -122,4 +125,5 @@ public class SettingsPayload
     public double SampleDepth        { get; set; } = 0.08;
     public int    UpdateIntervalMs   { get; set; } = 100;
     public int    Brightness         { get; set; } = 128;
+    public string DeviceId           { get; set; } = string.Empty;
 }
