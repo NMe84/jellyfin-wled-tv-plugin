@@ -8,6 +8,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Test button moved inline with URL input; tests the field value not the stored value. New device restriction setting — select the specific Jellyfin client the LED strip is attached to.",
+        "checksum": "37c5964444de37804219cd5b0608fca8",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.18.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-04T21:56:32Z",
+        "version": "0.0.18.0"
+      },
+      {
         "changelog": "Auto-detect letterbox/pillarbox bars.\n\nScans the current frame at 64x64 resolution every 2 s to find the edges of the actual picture area, then restricts all LED colour sampling to that area. Handles static bars and dynamic aspect-ratio changes mid-video.",
         "checksum": "2359ed8fcb7ee51118baa50c4e826572",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v0.0.17.0/Jellyfin.Plugin.WledTv.zip",
