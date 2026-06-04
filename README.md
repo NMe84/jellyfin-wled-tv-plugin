@@ -38,6 +38,12 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Brightness | Master brightness sent to WLED (0–255) |
 | Update interval | Milliseconds between colour updates (100 ms = 10 fps) |
 
+## Testing without hardware
+
+If you want to try the plugin before buying a WLED controller and LED strip, check out the companion mock project:
+
+**[wled-ambilight-mock](https://github.com/NMe84/wled-ambilight-mock)** — a local WebSocket server that implements the WLED API and renders a live visual of the LED colours around a simulated TV frame. Point the plugin at `ws://localhost:8001`, start the mock, and you can see exactly how the edge lighting will look without any physical hardware.
+
 ## License
 
 [MIT](LICENSE)
