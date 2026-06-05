@@ -346,13 +346,16 @@ public class LedScriptService : IHostedService, IDisposable
     if (!_wglCtx) return (_wglReady = false);
 
     var g = _wglCtx;
-    // Flip Y on upload so the image is top-down in the texture, matching Canvas 2D
+    // UNPACK_FLIP_Y_WEBGL stores video row-0 (top) at texture y=1.
+    // The vertex shader then inverts t.y so readPixels (which returns rows
+    // bottom-first) ends up delivering data in top-to-bottom order, matching
+    // Canvas 2D convention, without any JS post-processing.
     g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, true);
 
     var vs = g.createShader(g.VERTEX_SHADER);
     g.shaderSource(vs,
       'attribute vec2 p;varying vec2 t;' +
-      'void main(){t=p*.5+.5;gl_Position=vec4(p,0,1);}');
+      'void main(){t=vec2(p.x*.5+.5,1.-(p.y*.5+.5));gl_Position=vec4(p,0,1);}');
     g.compileShader(vs);
 
     var fs = g.createShader(g.FRAGMENT_SHADER);
@@ -391,33 +394,38 @@ public class LedScriptService : IHostedService, IDisposable
       _wglCtx.viewport(0, 0, tw, th);
     }
     try {
-      _wglCtx.texImage2D(_wglCtx.TEXTURE_2D, 0, _wglCtx.RGBA,
-                         _wglCtx.RGBA, _wglCtx.UNSIGNED_BYTE, video);
-      _wglCtx.drawArrays(_wglCtx.TRIANGLE_STRIP, 0, 4);
-      ctx.drawImage(_wglCanvas, 0, 0); // small copy: WebGL canvas → 2D canvas
+      var g = _wglCtx;
+      g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, video);
+      g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
+      // Read pixels directly from the WebGL framebuffer — no cross-context
+      // ctx.drawImage copy, no separate getImageData call.  On slow SoCs the
+      // cross-context flush (WebGL → Canvas 2D) was the dominant cost even at
+      // 1/4 scale; staying inside one GL context eliminates that bottleneck.
+      var buf = new Uint8Array(tw * th * 4);
+      g.readPixels(0, 0, tw, th, g.RGBA, g.UNSIGNED_BYTE, buf);
+      _framePixels = buf;
       return true;
     } catch (e) { return false; }
   }
 
-  // Captures the current video frame into the main 2D canvas at 1/4 scale,
-  // then reads all pixels into _framePixels in one getImageData call.
-  // Working at 1/4 scale reduces the GPU→CPU readback from ~6 MB to ~400 KB,
-  // which is the main source of the 800 ms delay on WebOS.
+  // Captures the current video frame at 1/4 scale into _framePixels.
+  // Canvas 2D path: draws downscaled then reads the whole canvas once.
+  // WebGL path: renders to GL canvas and reads back via gl.readPixels —
+  //   no 2D canvas involved, no cross-context pipeline flush.
   function captureFrame(video) {
-    ensureCanvas();
     var tw = Math.max(1, video.videoWidth  >> 2); // 1/4 scale
     var th = Math.max(1, video.videoHeight >> 2);
-    canvas.width  = tw;
-    canvas.height = th;
+    _frameWidth  = tw;
+    _frameHeight = th;
     if (config && config.captureMethod === 1) {
       _captureViaWebGL(video, tw, th);
     } else {
-      ctx.drawImage(video, 0, 0, tw, th); // draw downscaled
+      ensureCanvas();
+      canvas.width  = tw;
+      canvas.height = th;
+      ctx.drawImage(video, 0, 0, tw, th);
+      _framePixels = ctx.getImageData(0, 0, tw, th).data;
     }
-    // One getImageData for the whole frame; sampleRegion indexes this array.
-    _framePixels = ctx.getImageData(0, 0, tw, th).data;
-    _frameWidth  = tw;
-    _frameHeight = th;
   }
 
   // Averages pixel colour over the given region of _framePixels.
