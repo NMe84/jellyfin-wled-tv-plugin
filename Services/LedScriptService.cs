@@ -416,7 +416,13 @@ public class LedScriptService : IHostedService, IDisposable
 
     var elapsed = 0;
 
-    if (!video.paused && video.readyState >= 2) {
+    // Require a decoded frame with non-zero dimensions.
+    // The paused check is intentionally omitted: on WebOS (and some other
+    // smart-TV platforms) video.paused may be stuck at true even during active
+    // playback because the underlying hardware media component does not keep the
+    // HTML5 property in sync.  Sampling a paused frame is harmless — the LEDs
+    // simply hold the last colour until playback resumes.
+    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
       var t0 = Date.now();
       try {
         ensureCanvas();
