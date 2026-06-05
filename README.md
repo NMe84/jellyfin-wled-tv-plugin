@@ -20,7 +20,7 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 
 1. Add the plugin repository to Jellyfin:  
    **Dashboard → Plugins → Repositories → +**  
-   URL: `https://nme84.github.io/jellyfin-plugins/manifest.json`
+   URL: `https://raw.githubusercontent.com/NMe84/jellyfin-plugins/gh-pages/manifest.json`
 2. Install **WLED TV** from the catalogue and restart Jellyfin.
 3. Go to **Dashboard → WLED TV** and configure your strip.
 
@@ -37,6 +37,8 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Sample depth | How far from the screen edge to sample (% of frame dimension) |
 | Brightness | Master brightness sent to WLED (0–255) |
 | Update interval | Milliseconds between colour updates (100 ms = 10 fps) |
+| Capture method | **Canvas 2D** (default) works on most platforms. Switch to **WebGL** on devices where the video decoder renders to a hardware overlay inaccessible to Canvas 2D, such as LG WebOS |
+| Send debug logs to mock WLED server | When connected to [wled-ambilight-mock](https://github.com/NMe84/wled-ambilight-mock), stream diagnostic frame and state messages back through the WebSocket for troubleshooting. Has no effect on a real WLED device |
 
 ## Testing without hardware
 
