@@ -142,6 +142,12 @@ public class LedScriptService : IHostedService, IDisposable
 
   var _logAt       = 0;      // rate-limit helper for the 'wait' diagnostic log
 
+  // Mock-server detection and remote logging
+  var isMock         = false;  // true once connected to the wled-ambilight-mock server
+  var _mockChecked   = false;  // true once the state response has been inspected
+  var _mockFirstFrame = true;  // true until the first frame has been logged this connection
+  var _mockLogAt     = 0;      // rate-limit: last timestamp a frame was logged to mock
+
   // Letterbox / pillarbox detection
   var contentBounds = null;  // { top, bottom, left, right } canvas px; null = full frame
   var boundsCanvas  = null;
@@ -181,17 +187,38 @@ public class LedScriptService : IHostedService, IDisposable
 
     try {
       ws = new WebSocket(config.wledWsUrl);
-      ws.onopen    = function () { console.log('[wledtv] ws open'); };
-      ws.onmessage = function () { /* discard WLED state-broadcast responses */ };
+      ws.onopen    = function () {
+        console.log('[wledtv] ws open');
+        // Ask for the current state once.  The response lets us detect whether
+        // this is the mock server (info.ver contains "-mock") so we can send
+        // debug log messages back through the same WebSocket.
+        try { ws.send(JSON.stringify({ v: true })); } catch (e) {}
+      };
+      ws.onmessage = function (evt) {
+        // Only inspect messages until we know whether this is the mock server.
+        if (_mockChecked) return;
+        try {
+          var msg = JSON.parse(evt.data);
+          if (msg && msg.info && typeof msg.info.ver === 'string') {
+            _mockChecked = true;
+            if (msg.info.ver.indexOf('-mock') !== -1) {
+              isMock          = true;
+              _mockFirstFrame = true;
+              _mockLogAt      = 0;
+              logToMock('wledtv attached (ver=' + msg.info.ver + ')');
+            }
+          }
+        } catch (e) {}
+      };
       ws.onclose   = function (ev) {
-        ws = null;
+        ws           = null;
+        isMock       = false;
+        _mockChecked = false;
         if (wsClosing) {
           // We initiated this close — reconnect immediately (no penalty delay).
           console.log('[wledtv] ws closed (deliberate)');
         } else {
           // Remote/network close — short back-off before reconnecting.
-          // Keep this small: the mock closes after every color frame, so a long
-          // delay means a long visible gap in LED updates.
           wsRetryAt = Date.now() + 200;
           console.log('[wledtv] ws closed unexpectedly (code=' + ev.code + '), retry in 200ms');
         }
@@ -210,6 +237,12 @@ public class LedScriptService : IHostedService, IDisposable
     wsClosing = true;   // tell onclose not to impose a retry delay
     wsRetryAt = 0;
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  }
+
+  // Send a log message back to the mock server.  No-op on real WLED.
+  function logToMock(msg) {
+    if (!isMock || !ws || ws.readyState !== 1) return;
+    try { ws.send(JSON.stringify({ log: msg })); } catch (e) {}
   }
 
   // Attempt a fire-and-forget WebSocket send.  Returns false and resets ws on
@@ -429,6 +462,26 @@ public class LedScriptService : IHostedService, IDisposable
         canvas.width  = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
+        // If connected to the mock, log frame diagnostics on the first frame and
+        // every 10 s thereafter to confirm ctx.drawImage is producing real data.
+        if (isMock) {
+          var tMock = Date.now();
+          if (_mockFirstFrame || tMock - _mockLogAt > 10000) {
+            _mockFirstFrame = false;
+            _mockLogAt      = tMock;
+            var cw = canvas.width, ch = canvas.height;
+            if (cw > 0 && ch > 0) {
+              var px = ctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data;
+              logToMock('frame ' + cw + 'x' + ch +
+                ' readyState=' + video.readyState +
+                ' paused=' + video.paused +
+                ' center=[' + px[0] + ',' + px[1] + ',' + px[2] + ']' +
+                (px[0] + px[1] + px[2] === 0 ? ' ALL-BLACK — drawImage may not be working' : ''));
+            } else {
+              logToMock('frame 0x0 — canvas has no dimensions');
+            }
+          }
+        }
         // Re-detect content bounds every 2 s.  This handles both static bars
         // (letterbox/pillarbox) and dynamic aspect-ratio changes mid-video.
         var tFrame = Date.now();
@@ -445,6 +498,17 @@ public class LedScriptService : IHostedService, IDisposable
       }
       elapsed = Date.now() - t0;
     } else {
+      // Log to mock server why sampling is being skipped (rate-limited to 3 s)
+      if (isMock) {
+        var tMockSkip = Date.now();
+        if (tMockSkip - _mockLogAt > 3000) {
+          _mockLogAt = tMockSkip;
+          logToMock('skip — readyState=' + video.readyState +
+            ' videoWidth=' + video.videoWidth +
+            ' videoHeight=' + video.videoHeight +
+            ' paused=' + video.paused);
+        }
+      }
       // Log why we are waiting (rate-limited to once every 3 s)
       var now = Date.now();
       if (now - _logAt > 3000) {
