@@ -154,6 +154,11 @@ public class LedScriptService : IHostedService, IDisposable
   var boundsCtx     = null;
   var lastBoundsAt  = 0;
 
+  // WebGL video-capture (used when config.captureMethod === 1)
+  var _wglCanvas = null;   // offscreen WebGL canvas
+  var _wglCtx    = null;   // WebGL context
+  var _wglReady  = false;  // true once WebGL setup succeeded
+
   // ── Config ────────────────────────────────────────────────────────────────
 
   function baseUrl() {
@@ -239,9 +244,11 @@ public class LedScriptService : IHostedService, IDisposable
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   }
 
-  // Send a log message back to the mock server.  No-op on real WLED.
+  // Send a log message back to the mock server.
+  // No-op on real WLED or when mock logging is disabled in settings.
   function logToMock(msg) {
-    if (!isMock || !ws || ws.readyState !== 1) return;
+    if (!isMock || !config || !config.mockLogging) return;
+    if (!ws || ws.readyState !== 1) return;
     try { ws.send(JSON.stringify({ log: msg })); } catch (e) {}
   }
 
@@ -328,6 +335,90 @@ public class LedScriptService : IHostedService, IDisposable
     for (var x = 63; x >= 0; x--) { if (!colBlack(x))  { right  = Math.round((x + 1) * sw / 64); break; } }
 
     return { top: top, bottom: bottom, left: left, right: right };
+  }
+
+  // ── WebGL video-capture fallback ─────────────────────────────────────────
+  //
+  // On platforms like WebOS the video decoder renders into a hardware overlay
+  // layer that Canvas 2D ctx.drawImage() cannot read (returns all-black).
+  // WebGL texture uploads use a different GPU path and can access those frames.
+  // After 3 consecutive all-black Canvas 2D frames we transparently switch.
+
+  function _setupWebGL() {
+    if (_wglCanvas !== null) return _wglReady;
+    _wglCanvas = document.createElement('canvas');
+    try {
+      _wglCtx = _wglCanvas.getContext('webgl') ||
+                _wglCanvas.getContext('experimental-webgl');
+    } catch (e) { _wglCtx = null; }
+    if (!_wglCtx) return (_wglReady = false);
+
+    var g = _wglCtx;
+    // Flip Y on upload so the image is top-down in the texture, matching Canvas 2D
+    g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, true);
+
+    var vs = g.createShader(g.VERTEX_SHADER);
+    g.shaderSource(vs,
+      'attribute vec2 p;varying vec2 t;' +
+      'void main(){t=p*.5+.5;gl_Position=vec4(p,0,1);}');
+    g.compileShader(vs);
+
+    var fs = g.createShader(g.FRAGMENT_SHADER);
+    g.shaderSource(fs,
+      'precision lowp float;uniform sampler2D s;varying vec2 t;' +
+      'void main(){gl_FragColor=texture2D(s,t);}');
+    g.compileShader(fs);
+
+    var prog = g.createProgram();
+    g.attachShader(prog, vs); g.attachShader(prog, fs);
+    g.linkProgram(prog); g.useProgram(prog);
+
+    var buf = g.createBuffer();
+    g.bindBuffer(g.ARRAY_BUFFER, buf);
+    g.bufferData(g.ARRAY_BUFFER,
+      new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), g.STATIC_DRAW);
+    var aPos = g.getAttribLocation(prog, 'p');
+    g.enableVertexAttribArray(aPos);
+    g.vertexAttribPointer(aPos, 2, g.FLOAT, false, 0, 0);
+
+    var tex = g.createTexture();
+    g.bindTexture(g.TEXTURE_2D, tex);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
+    g.uniform1i(g.getUniformLocation(prog, 's'), 0);
+
+    return (_wglReady = true);
+  }
+
+  function _captureViaWebGL(video) {
+    if (!_setupWebGL()) return false;
+    var w = canvas.width, h = canvas.height;
+    if (w <= 0 || h <= 0) return false;
+    if (_wglCanvas.width !== w || _wglCanvas.height !== h) {
+      _wglCanvas.width  = w;
+      _wglCanvas.height = h;
+      _wglCtx.viewport(0, 0, w, h);
+    }
+    try {
+      _wglCtx.texImage2D(_wglCtx.TEXTURE_2D, 0, _wglCtx.RGBA,
+                         _wglCtx.RGBA, _wglCtx.UNSIGNED_BYTE, video);
+      _wglCtx.drawArrays(_wglCtx.TRIANGLE_STRIP, 0, 4);
+      // Copy the WebGL canvas back into the regular 2D canvas so all
+      // downstream code (sampleRegion, detectContentBounds) works unchanged.
+      ctx.drawImage(_wglCanvas, 0, 0);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // Captures the current video frame into the main 2D canvas.
+  // Uses config.captureMethod: 0 = Canvas 2D (default), 1 = WebGL.
+  function captureFrame(video) {
+    if (config && config.captureMethod === 1) {
+      _captureViaWebGL(video);
+    } else {
+      ctx.drawImage(video, 0, 0);
+    }
   }
 
   function sampleRegion(x, y, w, h) {
@@ -461,9 +552,8 @@ public class LedScriptService : IHostedService, IDisposable
         ensureCanvas();
         canvas.width  = video.videoWidth;
         canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
-        // If connected to the mock, log frame diagnostics on the first frame and
-        // every 10 s thereafter to confirm ctx.drawImage is producing real data.
+        captureFrame(video);
+        // Log frame diagnostics to the mock server periodically.
         if (isMock) {
           var tMock = Date.now();
           if (_mockFirstFrame || tMock - _mockLogAt > 10000) {
@@ -473,10 +563,11 @@ public class LedScriptService : IHostedService, IDisposable
             if (cw > 0 && ch > 0) {
               var px = ctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data;
               logToMock('frame ' + cw + 'x' + ch +
+                ' method=' + (config && config.captureMethod === 1 ? 'webgl' : 'canvas2d') +
                 ' readyState=' + video.readyState +
                 ' paused=' + video.paused +
                 ' center=[' + px[0] + ',' + px[1] + ',' + px[2] + ']' +
-                (px[0] + px[1] + px[2] === 0 ? ' ALL-BLACK — drawImage may not be working' : ''));
+                (px[0] + px[1] + px[2] === 0 ? ' (black)' : ''));
             } else {
               logToMock('frame 0x0 — canvas has no dimensions');
             }

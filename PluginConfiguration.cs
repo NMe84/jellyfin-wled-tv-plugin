@@ -36,6 +36,18 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Empty string means "all devices" (the original behaviour).
     /// </summary>
     public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How the plugin captures video frames from the browser.
+    /// 0 = Canvas 2D (default). 1 = WebGL (for hardware-overlay platforms like WebOS).
+    /// </summary>
+    public int CaptureMethod { get; set; } = 0;
+
+    /// <summary>
+    /// When true, send diagnostic log messages to wled-ambilight-mock via WebSocket.
+    /// Has no effect when connected to a real WLED device.
+    /// </summary>
+    public bool MockLogging { get; set; } = false;
 }
 
 public enum LedLoopStart

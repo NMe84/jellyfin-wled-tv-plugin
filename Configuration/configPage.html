@@ -126,6 +126,36 @@
                     Total LEDs: <strong id="lblTotal">0</strong>
                 </p>
 
+                <!-- Video capture method -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="selCaptureMethod">Video capture method</label>
+                    <select id="selCaptureMethod" is="emby-select" class="emby-select"
+                            style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
+                        <option value="0">Canvas 2D (default)</option>
+                        <option value="1">WebGL (hardware overlay platforms)</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Use <strong>Canvas 2D</strong> on all normal devices (desktop browsers, phones).
+                        Switch to <strong>WebGL</strong> only if the LEDs do not turn on during playback
+                        — this happens on platforms such as WebOS where the video decoder renders into a
+                        hardware overlay layer that Canvas 2D cannot read.
+                    </div>
+                </div>
+
+                <!-- Mock debug logging -->
+                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:1.5em;">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="chkMockLogging" is="emby-checkbox" class="emby-checkbox">
+                        <span>Send debug logs to mock WLED server</span>
+                    </label>
+                    <div class="fieldDescription" style="margin-left:2.5em;">
+                        When connected to <a href="https://github.com/NMe84/wled-ambilight-mock" target="_blank">wled-ambilight-mock</a>,
+                        send diagnostic messages (frame dimensions, capture mode, pixel data) back through
+                        the WebSocket. Disable in normal use to keep the mock log clean.
+                        Has no effect on a real WLED device.
+                    </div>
+                </div>
+
                 <!-- Save -->
                 <div style="margin-top:1em;">
                     <button type="submit" class="raised button-submit emby-button">Save</button>
@@ -162,8 +192,10 @@
         // ── UI references ────────────────────────────────────────────────────
         var banner    = document.getElementById('wledBanner');
         var form      = document.getElementById('wledConfigForm');
-        var chkEn     = document.getElementById('chkEnabled');
-        var selDevice = document.getElementById('selDeviceId');
+        var chkEn           = document.getElementById('chkEnabled');
+        var selDevice       = document.getElementById('selDeviceId');
+        var selCapture      = document.getElementById('selCaptureMethod');
+        var chkMockLogging  = document.getElementById('chkMockLogging');
         var txtUrl    = document.getElementById('txtWledWsUrl');
         var btnTest   = document.getElementById('btnTest');
         var testOut   = document.getElementById('wledTestResult');
@@ -210,8 +242,10 @@
             rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
             rngBri.value         = cfg.brightness          || 128;
             numMs.value          = cfg.updateIntervalMs    || 100;
-            lblDepth.textContent = rngDepth.value;
-            lblBri.textContent   = rngBri.value;
+            lblDepth.textContent        = rngDepth.value;
+            lblBri.textContent          = rngBri.value;
+            selCapture.value            = String(cfg.captureMethod || 0);
+            chkMockLogging.checked      = cfg.mockLogging === true;
             updateSummary();
 
             var savedDeviceId = cfg.deviceId || '';
@@ -263,7 +297,9 @@
                     sampleDepth:        parseInt(rngDepth.value) / 100,
                     brightness:         parseInt(rngBri.value),
                     updateIntervalMs:   parseInt(numMs.value),
-                    deviceId:           selDevice.value
+                    deviceId:           selDevice.value,
+                    captureMethod:      parseInt(selCapture.value),
+                    mockLogging:        chkMockLogging.checked
                 })
             })
             .then(function () { showBanner('Configuration saved.', true); })
