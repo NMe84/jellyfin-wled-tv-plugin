@@ -304,29 +304,33 @@ public class LedScriptService : IHostedService, IDisposable
     if (!_framePixels || w <= 0 || h <= 0) return null;
     var T = 16; // per-channel threshold
 
-    function rowBlack(y) {
-      var base = y * w * 4;
-      for (var x = 0; x < w; x++) {
-        var i = base + x * 4;
-        if (_framePixels[i] > T || _framePixels[i+1] > T || _framePixels[i+2] > T) return false;
+    // Single pass: track bounding box of non-black pixels and count them.
+    // Replaces four separate row/column sweeps and is more cache-friendly.
+    var top = h, bottom = -1, left = w, right = -1;
+    var nonBlack = 0;
+    var total = w * h;
+    for (var i = 0; i < total; i++) {
+      var base = i * 4;
+      if (_framePixels[base] > T || _framePixels[base+1] > T || _framePixels[base+2] > T) {
+        nonBlack++;
+        var py = (i / w) | 0;
+        var px = i % w;
+        if (py < top)    top    = py;
+        if (py > bottom) bottom = py;
+        if (px < left)   left   = px;
+        if (px > right)  right  = px;
       }
-      return true;
-    }
-    function colBlack(x) {
-      for (var y = 0; y < h; y++) {
-        var i = (y * w + x) * 4;
-        if (_framePixels[i] > T || _framePixels[i+1] > T || _framePixels[i+2] > T) return false;
-      }
-      return true;
     }
 
-    var top = 0, bottom = h, left = 0, right = w;
-    for (var y = 0; y < h; y++)  { if (!rowBlack(y))  { top    = y;     break; } }
-    for (var y = h-1; y >= 0; y--) { if (!rowBlack(y)) { bottom = y + 1; break; } }
-    for (var x = 0; x < w; x++)  { if (!colBlack(x))  { left   = x;     break; } }
-    for (var x = w-1; x >= 0; x--) { if (!colBlack(x)) { right  = x + 1; break; } }
+    // Mostly-black frame (credits, fade-to-black, etc.) — the tiny bright region
+    // is isolated text, not actual content edges.  Sampling from the full frame
+    // is better than zooming into a few lines of white text and blasting white LEDs.
+    if (nonBlack < total * 0.05) return null;
 
-    return { top: top, bottom: bottom, left: left, right: right };
+    // No bars found — full frame
+    if (top === 0 && bottom === h - 1 && left === 0 && right === w - 1) return null;
+
+    return { top: top, bottom: bottom + 1, left: left, right: right + 1 };
   }
 
   // ── WebGL video-capture fallback ─────────────────────────────────────────
