@@ -149,10 +149,13 @@ public class LedScriptService : IHostedService, IDisposable
   var _mockLogAt     = 0;      // rate-limit: last timestamp a frame was logged to mock
 
   // Letterbox / pillarbox detection
-  var contentBounds = null;  // { top, bottom, left, right } canvas px; null = full frame
-  var boundsCanvas  = null;
-  var boundsCtx     = null;
+  var contentBounds = null;  // { top, bottom, left, right } in capture-frame px; null = full frame
   var lastBoundsAt  = 0;
+
+  // Captured frame pixel data — written once per frame, read by sampleRegion
+  var _framePixels = null;  // Uint8ClampedArray from a single getImageData read
+  var _frameWidth  = 0;
+  var _frameHeight = 0;
 
   // WebGL video-capture (used when config.captureMethod === 1)
   var _wglCanvas = null;   // offscreen WebGL canvas
@@ -292,47 +295,36 @@ public class LedScriptService : IHostedService, IDisposable
 
   // ── Letterbox / pillarbox detection ──────────────────────────────────────
   //
-  // Draws the current frame to a tiny 64×64 canvas and scans rows/columns
-  // for black bars.  Running at 1/64 resolution keeps this under 1 ms.
+  // Scans _framePixels (already downscaled) for black bars.
+  // Coordinates are in the capture frame's own pixel space.
   // Called every 2 s so dynamic aspect-ratio changes are picked up quickly.
 
-  function ensureBoundsCanvas() {
-    if (!boundsCanvas) {
-      boundsCanvas        = document.createElement('canvas');
-      boundsCanvas.width  = 64;
-      boundsCanvas.height = 64;
-      boundsCtx = boundsCanvas.getContext('2d', { willReadFrequently: true });
-    }
-  }
-
   function detectContentBounds() {
-    ensureBoundsCanvas();
-    var sw = canvas.width, sh = canvas.height;
-    boundsCtx.drawImage(canvas, 0, 0, sw, sh, 0, 0, 64, 64);
-    var d = boundsCtx.getImageData(0, 0, 64, 64).data;
-    var T = 16; // per-channel threshold — bars are near 0, real content is brighter
+    var w = _frameWidth, h = _frameHeight;
+    if (!_framePixels || w <= 0 || h <= 0) return null;
+    var T = 16; // per-channel threshold
 
     function rowBlack(y) {
-      var base = y * 64 * 4;
-      for (var x = 0; x < 64; x++) {
+      var base = y * w * 4;
+      for (var x = 0; x < w; x++) {
         var i = base + x * 4;
-        if (d[i] > T || d[i+1] > T || d[i+2] > T) return false;
+        if (_framePixels[i] > T || _framePixels[i+1] > T || _framePixels[i+2] > T) return false;
       }
       return true;
     }
     function colBlack(x) {
-      for (var y = 0; y < 64; y++) {
-        var i = (y * 64 + x) * 4;
-        if (d[i] > T || d[i+1] > T || d[i+2] > T) return false;
+      for (var y = 0; y < h; y++) {
+        var i = (y * w + x) * 4;
+        if (_framePixels[i] > T || _framePixels[i+1] > T || _framePixels[i+2] > T) return false;
       }
       return true;
     }
 
-    var top = 0, bottom = sh, left = 0, right = sw;
-    for (var y = 0; y < 64; y++)  { if (!rowBlack(y))  { top    = Math.round(y       * sh / 64); break; } }
-    for (var y = 63; y >= 0; y--) { if (!rowBlack(y))  { bottom = Math.round((y + 1) * sh / 64); break; } }
-    for (var x = 0; x < 64; x++)  { if (!colBlack(x))  { left   = Math.round(x       * sw / 64); break; } }
-    for (var x = 63; x >= 0; x--) { if (!colBlack(x))  { right  = Math.round((x + 1) * sw / 64); break; } }
+    var top = 0, bottom = h, left = 0, right = w;
+    for (var y = 0; y < h; y++)  { if (!rowBlack(y))  { top    = y;     break; } }
+    for (var y = h-1; y >= 0; y--) { if (!rowBlack(y)) { bottom = y + 1; break; } }
+    for (var x = 0; x < w; x++)  { if (!colBlack(x))  { left   = x;     break; } }
+    for (var x = w-1; x >= 0; x--) { if (!colBlack(x)) { right  = x + 1; break; } }
 
     return { top: top, bottom: bottom, left: left, right: right };
   }
@@ -391,44 +383,62 @@ public class LedScriptService : IHostedService, IDisposable
     return (_wglReady = true);
   }
 
-  function _captureViaWebGL(video) {
+  function _captureViaWebGL(video, tw, th) {
     if (!_setupWebGL()) return false;
-    var w = canvas.width, h = canvas.height;
-    if (w <= 0 || h <= 0) return false;
-    if (_wglCanvas.width !== w || _wglCanvas.height !== h) {
-      _wglCanvas.width  = w;
-      _wglCanvas.height = h;
-      _wglCtx.viewport(0, 0, w, h);
+    if (_wglCanvas.width !== tw || _wglCanvas.height !== th) {
+      _wglCanvas.width  = tw;
+      _wglCanvas.height = th;
+      _wglCtx.viewport(0, 0, tw, th);
     }
     try {
       _wglCtx.texImage2D(_wglCtx.TEXTURE_2D, 0, _wglCtx.RGBA,
                          _wglCtx.RGBA, _wglCtx.UNSIGNED_BYTE, video);
       _wglCtx.drawArrays(_wglCtx.TRIANGLE_STRIP, 0, 4);
-      // Copy the WebGL canvas back into the regular 2D canvas so all
-      // downstream code (sampleRegion, detectContentBounds) works unchanged.
-      ctx.drawImage(_wglCanvas, 0, 0);
+      ctx.drawImage(_wglCanvas, 0, 0); // small copy: WebGL canvas → 2D canvas
       return true;
     } catch (e) { return false; }
   }
 
-  // Captures the current video frame into the main 2D canvas.
-  // Uses config.captureMethod: 0 = Canvas 2D (default), 1 = WebGL.
+  // Captures the current video frame into the main 2D canvas at 1/4 scale,
+  // then reads all pixels into _framePixels in one getImageData call.
+  // Working at 1/4 scale reduces the GPU→CPU readback from ~6 MB to ~400 KB,
+  // which is the main source of the 800 ms delay on WebOS.
   function captureFrame(video) {
+    ensureCanvas();
+    var tw = Math.max(1, video.videoWidth  >> 2); // 1/4 scale
+    var th = Math.max(1, video.videoHeight >> 2);
+    canvas.width  = tw;
+    canvas.height = th;
     if (config && config.captureMethod === 1) {
-      _captureViaWebGL(video);
+      _captureViaWebGL(video, tw, th);
     } else {
-      ctx.drawImage(video, 0, 0);
+      ctx.drawImage(video, 0, 0, tw, th); // draw downscaled
     }
+    // One getImageData for the whole frame; sampleRegion indexes this array.
+    _framePixels = ctx.getImageData(0, 0, tw, th).data;
+    _frameWidth  = tw;
+    _frameHeight = th;
   }
 
+  // Averages pixel colour over the given region of _framePixels.
+  // No getImageData call — indexes the pre-read array directly.
   function sampleRegion(x, y, w, h) {
-    x = Math.max(0, Math.min(Math.round(x), canvas.width  - 1));
-    y = Math.max(0, Math.min(Math.round(y), canvas.height - 1));
-    w = Math.max(1, Math.min(Math.round(w), canvas.width  - x));
-    h = Math.max(1, Math.min(Math.round(h), canvas.height - y));
-    var d = ctx.getImageData(x, y, w, h).data;
-    var r = 0, g = 0, b = 0, n = d.length / 4;
-    for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    if (!_framePixels) return [0, 0, 0];
+    x = Math.max(0, Math.min(Math.round(x), _frameWidth  - 1));
+    y = Math.max(0, Math.min(Math.round(y), _frameHeight - 1));
+    w = Math.max(1, Math.min(Math.round(w), _frameWidth  - x));
+    h = Math.max(1, Math.min(Math.round(h), _frameHeight - y));
+    var r = 0, g = 0, b = 0;
+    for (var row = y; row < y + h; row++) {
+      var base = (row * _frameWidth + x) * 4;
+      for (var col = 0; col < w; col++) {
+        var i = base + col * 4;
+        r += _framePixels[i];
+        g += _framePixels[i + 1];
+        b += _framePixels[i + 2];
+      }
+    }
+    var n = w * h;
     return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
   }
 
@@ -442,8 +452,8 @@ public class LedScriptService : IHostedService, IDisposable
     var b  = contentBounds;
     var bx = b ? b.left              : 0;
     var by = b ? b.top               : 0;
-    var vw = b ? (b.right  - b.left) : canvas.width;
-    var vh = b ? (b.bottom - b.top)  : canvas.height;
+    var vw = b ? (b.right  - b.left) : _frameWidth;
+    var vh = b ? (b.bottom - b.top)  : _frameHeight;
     var h     = config.horizontalLedCount;
     var v     = config.verticalLedCount;
     var d     = config.sampleDepth;
@@ -549,27 +559,25 @@ public class LedScriptService : IHostedService, IDisposable
     if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
       var t0 = Date.now();
       try {
-        ensureCanvas();
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // captureFrame sets canvas + _framePixels at 1/4 scale
         captureFrame(video);
         // Log frame diagnostics to the mock server periodically.
+        // Read centre pixel directly from the pre-read array — no extra getImageData.
         if (isMock) {
           var tMock = Date.now();
           if (_mockFirstFrame || tMock - _mockLogAt > 10000) {
             _mockFirstFrame = false;
             _mockLogAt      = tMock;
-            var cw = canvas.width, ch = canvas.height;
-            if (cw > 0 && ch > 0) {
-              var px = ctx.getImageData(Math.floor(cw / 2), Math.floor(ch / 2), 1, 1).data;
-              logToMock('frame ' + cw + 'x' + ch +
+            if (_frameWidth > 0 && _frameHeight > 0 && _framePixels) {
+              var ci = ((_frameHeight >> 1) * _frameWidth + (_frameWidth >> 1)) * 4;
+              logToMock('frame ' + video.videoWidth + 'x' + video.videoHeight +
+                ' capture=' + _frameWidth + 'x' + _frameHeight +
                 ' method=' + (config && config.captureMethod === 1 ? 'webgl' : 'canvas2d') +
                 ' readyState=' + video.readyState +
-                ' paused=' + video.paused +
-                ' center=[' + px[0] + ',' + px[1] + ',' + px[2] + ']' +
-                (px[0] + px[1] + px[2] === 0 ? ' (black)' : ''));
+                ' center=[' + _framePixels[ci] + ',' + _framePixels[ci+1] + ',' + _framePixels[ci+2] + ']' +
+                (_framePixels[ci] + _framePixels[ci+1] + _framePixels[ci+2] === 0 ? ' (black)' : ''));
             } else {
-              logToMock('frame 0x0 — canvas has no dimensions');
+              logToMock('frame 0x0 — no frame data');
             }
           }
         }
