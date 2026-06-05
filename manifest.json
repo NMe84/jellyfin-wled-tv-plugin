@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Performance: 1/4-scale capture and single getImageData call per frame.\n\nReduces WebGL GPU readback from ~6 MB to ~400 KB; eliminates per-region getImageData calls. Expected to bring refresh rate from ~800 ms to ~50-100 ms on WebOS.\n\nAlso fixes the mock-logging checkbox not rendering in the settings page.",
+        "checksum": "848f1bb46e267aa9607c32b787e9e64d",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.0.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-05T10:41:26Z",
+        "version": "1.1.0.0"
+      },
+      {
         "changelog": "Add WebGL capture method setting and mock debug logging toggle.\n\n- New 'Video capture method' setting: Canvas 2D (default) or WebGL for hardware-overlay platforms like WebOS where Canvas 2D returns black pixels.\n- New 'Send debug logs to mock WLED server' checkbox, off by default.",
         "checksum": "0a6bffa45b44b9955ba406a44d4e7554",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.0.3.0/Jellyfin.Plugin.WledTv.zip",
