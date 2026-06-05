@@ -325,7 +325,7 @@ public class LedScriptService : IHostedService, IDisposable
     // Mostly-black frame (credits, fade-to-black, etc.) — the tiny bright region
     // is isolated text, not actual content edges.  Sampling from the full frame
     // is better than zooming into a few lines of white text and blasting white LEDs.
-    if (nonBlack < total * 0.05) return null;
+    if (nonBlack < total * 0.065) return null;
 
     // No bars found — full frame
     if (top === 0 && bottom === h - 1 && left === 0 && right === w - 1) return null;
