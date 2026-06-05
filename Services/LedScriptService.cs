@@ -190,8 +190,8 @@ public class LedScriptService : IHostedService, IDisposable
       ws.onopen    = function () {
         console.log('[wledtv] ws open');
         // Ask for the current state once.  The response lets us detect whether
-        // this is the mock server (info.ver contains "-mock") so we can send
-        // debug log messages back through the same WebSocket.
+        // this is the mock server (info.ver contains the suffix -mock) so we can
+        // send debug log messages back through the same WebSocket.
         try { ws.send(JSON.stringify({ v: true })); } catch (e) {}
       };
       ws.onmessage = function (evt) {
