@@ -9,11 +9,11 @@
     "owner": "nme84",
     "versions": [
       {
-        "changelog": "Fix: LEDs silent on WebOS/smart TV clients where video.paused is incorrectly stuck at true during playback.",
-        "checksum": "ce1937222e045148d260c2cd28695783",
+        "changelog": "Fix: LEDs silent on WebOS. Drop video.paused check; add mock-server debug logging.\n\n- Sampling now triggers on readyState >= 2 + non-zero dimensions (not paused state) to work around WebOS not updating video.paused during playback.\n- Connecting to wled-ambilight-mock now sends diagnostic messages back through the WebSocket: frame dimensions, centre pixel colour, and skip reasons.",
+        "checksum": "d0ce7849998e891271c4986aa086d54e",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.0.2.0/Jellyfin.Plugin.WledTv.zip",
         "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-05T09:17:07Z",
+        "timestamp": "2026-06-05T09:36:26Z",
         "version": "1.0.2.0"
       },
       {
