@@ -189,6 +189,24 @@
     document.addEventListener('pageshow', function (e) {
         if (e.target.id !== 'WledTvConfigPage') return;
 
+        // The emby-checkbox polyfill sometimes processes only the first checkbox
+        // on the page.  Manually apply the same markup it injects so that all
+        // [is="emby-checkbox"] elements render correctly.
+        e.target.querySelectorAll('input[is="emby-checkbox"]:not([data-embycheckbox="true"])').forEach(function (input) {
+            input.setAttribute('data-embycheckbox', 'true');
+            var s = input.nextElementSibling;
+            if (s && s.tagName === 'SPAN') s.className = 'checkboxLabel';
+            var label = input.parentElement;
+            if (label) {
+                var outline = document.createElement('span');
+                outline.className = 'checkboxOutline';
+                outline.innerHTML =
+                    '<span class="material-icons checkboxIcon checkboxIcon-checked check" aria-hidden="true"></span>' +
+                    '<span class="material-icons checkboxIcon checkboxIcon-unchecked " aria-hidden="true"></span>';
+                label.appendChild(outline);
+            }
+        });
+
         // ── UI references ────────────────────────────────────────────────────
         var banner    = document.getElementById('wledBanner');
         var form      = document.getElementById('wledConfigForm');
@@ -250,12 +268,36 @@
 
             var savedDeviceId = cfg.deviceId || '';
 
-            // Load device list and populate the dropdown
-            return apiFetch('/Devices').then(function (result) {
-                var devices = (result && result.Items) || [];
+            // Load device list + user list in parallel, then filter and populate
+            return Promise.all([apiFetch('/Devices'), apiFetch('/Users')]).then(function (results) {
+                var devices     = (results[0] && results[0].Items) || [];
+                var users       = results[1] || [];
+                var twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
 
-                // Build labelled entries, then sort alphabetically before adding to DOM
-                var entries = devices.map(function (dev) {
+                // Build a set of user IDs that are hidden from the login screen
+                var hiddenUsers = {};
+                users.forEach(function (u) {
+                    if (u.Policy && u.Policy.IsHiddenFromUnauthorizedUsers) {
+                        hiddenUsers[u.Id] = true;
+                    }
+                });
+
+                // Filter and build labelled entries
+                var entries = [];
+                devices.forEach(function (dev) {
+                    // Skip bot/automation devices
+                    var nameLC = (dev.Name || '').toLowerCase();
+                    var appLC  = (dev.AppName || '').toLowerCase();
+                    if (nameLC === 'jellyseerr' || appLC === 'jellyseerr') return;
+
+                    // Skip devices inactive for more than two weeks
+                    if (dev.DateLastActivity) {
+                        if (new Date(dev.DateLastActivity).getTime() < twoWeeksAgo) return;
+                    }
+
+                    // Skip devices last used by a login-screen-hidden user
+                    if (dev.LastUserId && hiddenUsers[dev.LastUserId]) return;
+
                     var label = dev.Name || dev.Id;
                     if (dev.AppName && dev.AppName !== dev.Name) {
                         label += ' (' + dev.AppName + ')';
@@ -265,8 +307,18 @@
                     } else if (dev.LastUserName) {
                         label += ' (' + dev.LastUserName + ')';
                     }
-                    return { id: dev.Id, label: label };
+                    entries.push({ id: dev.Id, label: label });
                 });
+
+                // If the currently saved device was filtered out, add it back so the
+                // selection is not silently lost
+                if (savedDeviceId && !entries.some(function (e) { return e.id === savedDeviceId; })) {
+                    var saved = devices.find(function (d) { return d.Id === savedDeviceId; });
+                    if (saved) {
+                        entries.push({ id: savedDeviceId, label: (saved.Name || savedDeviceId) + ' (inactive — currently selected)' });
+                    }
+                }
+
                 entries.sort(function (a, b) { return a.label.localeCompare(b.label); });
 
                 entries.forEach(function (entry) {
