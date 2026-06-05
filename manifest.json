@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "WebGL: replace ctx.drawImage cross-context copy with gl.readPixels — eliminates the GPU pipeline flush causing ~800 ms per frame on WebOS.\n\nFixes mock-logging checkbox not rendering in settings.",
+        "checksum": "17e28d2fa920e84e8752d3e57d8e7590",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-05T11:07:36Z",
+        "version": "1.1.1.0"
+      },
+      {
         "changelog": "Performance: 1/4-scale capture and single getImageData call per frame.\n\nReduces WebGL GPU readback from ~6 MB to ~400 KB; eliminates per-region getImageData calls. Expected to bring refresh rate from ~800 ms to ~50-100 ms on WebOS.\n\nAlso fixes the mock-logging checkbox not rendering in the settings page.",
         "checksum": "848f1bb46e267aa9607c32b787e9e64d",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.0.0/Jellyfin.Plugin.WledTv.zip",
