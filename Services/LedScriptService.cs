@@ -270,18 +270,36 @@ public class LedScriptService : IHostedService, IDisposable
     }
   }
 
+  function toHex(n) {
+    var h = '0123456789abcdef';
+    n = Math.max(0, Math.min(255, Math.round(n)));
+    return h[n >> 4] + h[n & 15];
+  }
+
+  function colorToHex(c) { return toHex(c[0]) + toHex(c[1]) + toHex(c[2]); }
+
   function sendColors(colors) {
-    var flat = [];
-    colors.forEach(function (c) { flat.push(c[0], c[1], c[2]); });
-    trySend({ on: true, bri: config.brightness, seg: [{ i: flat }] });
+    // WLED JSON API: on/bri and individual LED data must not be combined in one
+    // request — turning on from an off state with i: in the same payload is a
+    // documented no-op.  Send two sequential frames instead.
+    trySend({ on: true, bri: config.brightness });
+    // ESP8266 WLED has an ArduinoJson document size limit; empirically safe at
+    // 32 hex-encoded colours per WebSocket message.  Batches after the first use
+    // the [startIndex, hex, hex, ...] form so WLED places each chunk at the
+    // correct strip position without touching the remaining LEDs.
+    var BATCH = 32;
+    for (var start = 0; start < colors.length; start += BATCH) {
+      var chunk = colors.slice(start, start + BATCH).map(colorToHex);
+      trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
+    }
   }
 
   function sendOff() {
     if (!config) return;
-    var total = (config.horizontalLedCount * 2 + config.verticalLedCount * 2) * 3;
-    var zeros = [];
-    for (var i = 0; i < total; i++) zeros.push(0);
-    trySend({ on: false, seg: [{ i: zeros }] });
+    // Turning off reverts the segment to effect mode (WLED docs: individual
+    // control is non-persistent across power cycles).  A plain on:false is
+    // sufficient; there is no need to zero-fill i: first.
+    trySend({ on: false });
   }
 
   // ── Canvas / pixel sampling ───────────────────────────────────────────────
