@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Fix: WLED JSON API compatibility with ESP8266 devices**\n  - LED colours are now sent as 6-character hex strings (`RRGGBB`) instead of `[r,g,b]` sub-arrays, matching the documented WLED `i`-field format\n  - Colours are batched into groups of 32 per WebSocket message to stay within the ArduinoJson document buffer limit on ESP8266 (error 9 was observed at 64+ LEDs per message on a device with 17 KB free heap)\n  - Subsequent batches use the `[startIndex, hex, ...]` prefix so each chunk is placed at the correct strip position without touching other LEDs\n  - The power-on frame (`on`/`bri`) continues to be sent as a separate leading message, as combining it with `i` in a single request is a documented no-op when turning on from an off state",
+        "checksum": "405da0a22e81f8e5eeb5d07336031091",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.4.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-22T22:35:57Z",
+        "version": "1.1.4.0"
+      },
+      {
         "changelog": "Raise mostly-black frame threshold from 5% to 6.5% to suppress flickering on denser credit frames.",
         "checksum": "26c2be4ffd01b301f677c16921d5b34c",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.3.1/Jellyfin.Plugin.WledTv.zip",
