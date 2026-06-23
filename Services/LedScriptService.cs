@@ -292,7 +292,12 @@ public class LedScriptService : IHostedService, IDisposable
     // is shortened by captureFrame/computeLedColors elapsed time, causing the
     // next tick's sendColors to cancel still-pending timers from the previous
     // tick before they fire, resulting in partial or no LED updates.
-    var BATCH = 32;
+    //
+    // Batch size: empirically tested against this ESP8266 device — 56 LEDs OK,
+    // 58 error 9.  54 gives 5 batches for a 270-LED strip (270/54 = 5 exactly)
+    // with a comfortable 4-LED margin from the ArduinoJson buffer limit.
+    // This reduces messages from 9 (at 32) to 5 per tick.
+    var BATCH = 54;
     for (var start = 0; start < colors.length; start += BATCH) {
       var chunk = colors.slice(start, start + BATCH).map(colorToHex);
       trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
