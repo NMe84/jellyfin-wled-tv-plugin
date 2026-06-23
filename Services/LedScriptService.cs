@@ -141,7 +141,6 @@ public class LedScriptService : IHostedService, IDisposable
   var wsClosing    = false;  // true when WE initiated the close (suppress retry delay)
 
   var _logAt       = 0;      // rate-limit helper for the 'wait' diagnostic log
-  var _batchTimers = [];    // setTimeout handles for deferred batch sends
 
   // Mock-server detection and remote logging
   var isMock         = false;  // true once connected to the wled-ambilight-mock server
@@ -282,40 +281,21 @@ public class LedScriptService : IHostedService, IDisposable
   function colorToHex(c) { return toHex(c[0]) + toHex(c[1]) + toHex(c[2]); }
 
   function sendColors(colors) {
-    // Cancel any pending batch sends from the previous tick before scheduling
-    // a new set — prevents overlap if a tick fires while batches are still draining.
-    for (var k = 0; k < _batchTimers.length; k++) clearTimeout(_batchTimers[k]);
-    _batchTimers = [];
-
-    // Send on/bri once per connection rather than every frame.
+    // Send on/bri once per connection rather than every frame — the per-frame
+    // send in v1.1.4.0 was the source of TCP congestion.
     if (!ledsOn) {
       trySend({ on: true, bri: config.brightness });
     }
-
-    // ESP8266 ArduinoJson buffer limit: error 9 occurs at 64+ hex-string LED
-    // entries per message; 32 is the empirically confirmed safe maximum.
-    // Sending all batches synchronously floods the device TCP receive buffer
-    // and causes congestion (LEDs freeze then catch up).  Instead, spread each
-    // batch evenly across 80% of the tick window so the device has ~4 ms to
-    // drain each frame before the next arrives.
-    var BATCH    = 32;
-    var interval = config.updateIntervalMs || 40;
-    var count    = Math.ceil(colors.length / BATCH);
-    var spacing  = count > 1 ? Math.floor(interval * 0.8 / (count - 1)) : 0;
-
-    for (var b = 0; b < count; b++) {
-      var start = b * BATCH;
+    // All batches sent synchronously in one JS tick so WLED receives the full
+    // strip update as a burst before its effect engine can overwrite any LEDs.
+    // Deferred sends (setTimeout) were tried in v1.1.7.0 but the tick interval
+    // is shortened by captureFrame/computeLedColors elapsed time, causing the
+    // next tick's sendColors to cancel still-pending timers from the previous
+    // tick before they fire, resulting in partial or no LED updates.
+    var BATCH = 32;
+    for (var start = 0; start < colors.length; start += BATCH) {
       var chunk = colors.slice(start, start + BATCH).map(colorToHex);
-      var iArr  = start === 0 ? chunk : [start].concat(chunk);
-      if (b === 0) {
-        trySend({ seg: [{ i: iArr }] });
-      } else {
-        (function(arr, delay) {
-          _batchTimers.push(setTimeout(function() {
-            trySend({ seg: [{ i: arr }] });
-          }, delay));
-        })(iArr, b * spacing);
-      }
+      trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
     }
   }
 
