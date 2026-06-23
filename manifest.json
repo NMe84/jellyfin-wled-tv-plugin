@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## Changes\n\n- **Fix: TCP congestion and LED freeze on ESP8266 devices**\n\n  Version 1.1.4.0 sent 9 batched JSON frames per tick. At 10 fps this produced ~100 JSON parse operations per second on the ESP8266, starving the LED output and WiFi stack. The result was LEDs freezing after a few seconds and catching up when playback stopped.\n\n  This release replaces JSON batching with WLED binary live-data protocol (DRGB format): one 812-byte binary frame instead of nine ~300-byte JSON frames. No ArduinoJson allocation, no JSON parsing overhead on the device.\n\n  Binary frame layout: byte 0x02 (DRGB), byte 0x05 (5-second realtime timeout), then R,G,B triplets. The plugin sends a v:true probe on connect and waits for the WLED version response before switching to binary, so the mock server path is unaffected.\n\n- on/bri is now sent once per WebSocket connection rather than every frame.",
+        "checksum": "1a30b8747707a2c96e17005e81a970ba",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.5.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-23T19:12:19Z",
+        "version": "1.1.5.0"
+      },
+      {
         "changelog": "## Changes\n\n- **Fix: WLED JSON API compatibility with ESP8266 devices**\n  - LED colours are now sent as 6-character hex strings (`RRGGBB`) instead of `[r,g,b]` sub-arrays, matching the documented WLED `i`-field format\n  - Colours are batched into groups of 32 per WebSocket message to stay within the ArduinoJson document buffer limit on ESP8266 (error 9 was observed at 64+ LEDs per message on a device with 17 KB free heap)\n  - Subsequent batches use the `[startIndex, hex, ...]` prefix so each chunk is placed at the correct strip position without touching other LEDs\n  - The power-on frame (`on`/`bri`) continues to be sent as a separate leading message, as combining it with `i` in a single request is a documented no-op when turning on from an off state",
         "checksum": "405da0a22e81f8e5eeb5d07336031091",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.4.0/Jellyfin.Plugin.WledTv.zip",
