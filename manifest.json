@@ -9,52 +9,12 @@
     "owner": "nme84",
     "versions": [
       {
-        "changelog": "## Changes\n\n**Perf: increase batch size from 32 to 54 LEDs (9 to 5 batches per frame)**\n\nBatch sizes 48 through 62 were tested against the live ESP8266 device (270 LEDs, 17 KB free heap):\n\n- 48, 50, 54, 56: OK\n- 58, 60, 62: error 9 (ArduinoJson buffer exceeded)\n\nMaximum safe batch size is 56. Using 54 for a 4-LED safety margin, and because 270 / 54 = 5 exactly (five equal batches, no partial chunk).\n\nThis reduces WebSocket messages per frame from 9 to 5, cutting ArduinoJson parse operations from ~225 to ~125 per second at 25 fps — a 44% reduction in ESP8266 processing load.",
-        "checksum": "c8a13fae7f7a0908572d843d76d49676",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.9.0/Jellyfin.Plugin.WledTv.zip",
+        "changelog": "Add 'Update LEDs in batches' setting. When enabled (default, ESP8266 compatible), colours are sent in 54-LED batches. When disabled, all LEDs are sent in a single frame — intended for ESP32 and other controllers with ample heap.",
+        "checksum": "19f0735e5d7248e00bc5439d4b5bac4a",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.0.0/Jellyfin.Plugin.WledTv.zip",
         "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-23T21:21:33Z",
-        "version": "1.1.9.0"
-      },
-      {
-        "changelog": "## Changes\n\n**Fix: restore working LED updates from v1.1.4.0**\n\nEvery version from v1.1.5.0 to v1.1.7.0 broke LED colour updates for one of three reasons:\n\n- v1.1.5.0: binary WebSocket frames are silently ignored by WLED (WebSocket is JSON-only)\n- v1.1.6.0: a single 270-LED JSON frame exceeds the ESP8266 ArduinoJson buffer (error 9 on every tick)\n- v1.1.7.0: setTimeout pacing - tick() shortens the next interval by the elapsed processing time, so the next sendColors fires and cancels still-pending timers before they run, resulting in no LED updates\n\nThis release restores v1.1.4.0's synchronous burst approach (all 9 batches of 32 LEDs sent in one JS tick) with one change: on/bri is sent once per WebSocket connection instead of every frame. The per-frame on/bri was the source of the TCP congestion in v1.1.4.0.",
-        "checksum": "3561e5ed95f0e177e36bee94d2f134f3",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.8.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-23T21:09:28Z",
-        "version": "1.1.8.0"
-      },
-      {
-        "changelog": "## Changes\n\n**Fix: LED freeze / catch-up congestion (root cause analysis and correct fix)**\n\nEvery release since 1.1.4.0 failed for an explainable reason:\n\n- **1.1.5.0 (binary frames)**: WLED's WebSocket interface only accepts JSON text frames. Binary frames are silently ignored. The on/bri JSON worked (LEDs turned on to solid color), but the binary color data was dropped.\n- **1.1.6.0 (single 270-LED JSON)**: error 9 on every frame. 270 hex strings exceeds the ESP8266 ArduinoJson document buffer (~32 entries max, confirmed empirically). on/bri worked, color data was silently dropped.\n- **1.1.4.0 (32-LED batching)**: correct data, but all 9 batches were fired synchronously in one JavaScript tick. This flooded the ESP8266 TCP receive buffer and caused the freeze-then-catch-up congestion.\n\n**This release** keeps 32-LED hex-string batching (the only approach that works on ESP8266) but spreads the 9 batch sends across 80% of the tick window using setTimeout. At 25 fps (40 ms ticks) the spacing is 4 ms per batch, giving the device ~3 ms of idle time between each ~1-2 ms JSON parse. The TCP buffer never fills up.",
-        "checksum": "599a48d5fce1f6c4fc6e4375ca2cf473",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.7.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-23T20:51:30Z",
-        "version": "1.1.7.0"
-      },
-      {
-        "changelog": "## Changes\n\nDiagnostic baseline: single JSON hex-string frame for all LEDs, no batching, no binary.\n\nSends all configured LED colours in one JSON message using hex strings (e.g. \\\\FF0000\\\\). The on/bri power frame is still sent only once per WebSocket connection rather than every frame.\n\nIf error 9 appears on the device the ArduinoJson buffer limit is confirmed real. If it works cleanly this establishes that the 32-LED batching in 1.1.4.0 was unnecessary.",
-        "checksum": "6f0464c405c81ec41737dca43a5ac30c",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.6.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-23T19:36:19Z",
-        "version": "1.1.6.0"
-      },
-      {
-        "changelog": "## Changes\n\n- **Fix: TCP congestion and LED freeze on ESP8266 devices**\n\n  Version 1.1.4.0 sent 9 batched JSON frames per tick. At 10 fps this produced ~100 JSON parse operations per second on the ESP8266, starving the LED output and WiFi stack. The result was LEDs freezing after a few seconds and catching up when playback stopped.\n\n  This release replaces JSON batching with WLED binary live-data protocol (DRGB format): one 812-byte binary frame instead of nine ~300-byte JSON frames. No ArduinoJson allocation, no JSON parsing overhead on the device.\n\n  Binary frame layout: byte 0x02 (DRGB), byte 0x05 (5-second realtime timeout), then R,G,B triplets. The plugin sends a v:true probe on connect and waits for the WLED version response before switching to binary, so the mock server path is unaffected.\n\n- on/bri is now sent once per WebSocket connection rather than every frame.",
-        "checksum": "1a30b8747707a2c96e17005e81a970ba",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.5.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-23T19:12:19Z",
-        "version": "1.1.5.0"
-      },
-      {
-        "changelog": "## Changes\n\n- **Fix: WLED JSON API compatibility with ESP8266 devices**\n  - LED colours are now sent as 6-character hex strings (`RRGGBB`) instead of `[r,g,b]` sub-arrays, matching the documented WLED `i`-field format\n  - Colours are batched into groups of 32 per WebSocket message to stay within the ArduinoJson document buffer limit on ESP8266 (error 9 was observed at 64+ LEDs per message on a device with 17 KB free heap)\n  - Subsequent batches use the `[startIndex, hex, ...]` prefix so each chunk is placed at the correct strip position without touching other LEDs\n  - The power-on frame (`on`/`bri`) continues to be sent as a separate leading message, as combining it with `i` in a single request is a documented no-op when turning on from an off state",
-        "checksum": "405da0a22e81f8e5eeb5d07336031091",
-        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.4.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi": "10.11.9.0",
-        "timestamp": "2026-06-22T22:35:57Z",
-        "version": "1.1.4.0"
+        "timestamp": "2026-06-23T22:16:01Z",
+        "version": "1.2.0.0"
       },
       {
         "changelog": "Raise mostly-black frame threshold from 5% to 6.5% to suppress flickering on denser credit frames.",
