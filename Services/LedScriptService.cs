@@ -144,6 +144,7 @@ public class LedScriptService : IHostedService, IDisposable
 
   // Mock-server detection and remote logging
   var isMock         = false;  // true once connected to the wled-ambilight-mock server
+  var isRealWled     = false;  // true once confirmed as a real WLED device (not mock)
   var _mockChecked   = false;  // true once the state response has been inspected
   var _mockFirstFrame = true;  // true until the first frame has been logged this connection
   var _mockLogAt     = 0;      // rate-limit: last timestamp a frame was logged to mock
@@ -197,9 +198,11 @@ public class LedScriptService : IHostedService, IDisposable
       ws = new WebSocket(config.wledWsUrl);
       ws.onopen    = function () {
         console.log('[wledtv] ws open');
+        ledsOn = false;  // resend on/bri after every (re)connect
         // Ask for the current state once.  The response lets us detect whether
         // this is the mock server (info.ver contains the suffix -mock) so we can
-        // send debug log messages back through the same WebSocket.
+        // send debug log messages back through the same WebSocket, and whether
+        // it is real WLED so we can switch to the binary live-data protocol.
         try { ws.send(JSON.stringify({ v: true })); } catch (e) {}
       };
       ws.onmessage = function (evt) {
@@ -214,6 +217,8 @@ public class LedScriptService : IHostedService, IDisposable
               _mockFirstFrame = true;
               _mockLogAt      = 0;
               logToMock('wledtv attached (ver=' + msg.info.ver + ')');
+            } else {
+              isRealWled = true;  // confirmed real WLED — switch to binary frames
             }
           }
         } catch (e) {}
@@ -221,6 +226,7 @@ public class LedScriptService : IHostedService, IDisposable
       ws.onclose   = function (ev) {
         ws           = null;
         isMock       = false;
+        isRealWled   = false;
         _mockChecked = false;
         if (wsClosing) {
           // We initiated this close — reconnect immediately (no penalty delay).
@@ -255,13 +261,14 @@ public class LedScriptService : IHostedService, IDisposable
     try { ws.send(JSON.stringify({ log: msg })); } catch (e) {}
   }
 
-  // Attempt a fire-and-forget WebSocket send.  Returns false and resets ws on
-  // error so ensureWs() will reconnect on the next tick.
+  // Attempt a fire-and-forget WebSocket send.  Accepts a Uint8Array (sent as
+  // a binary frame) or a plain object (serialised to JSON text).  Returns
+  // false and resets ws on error so ensureWs() will reconnect next tick.
   function trySend(payload) {
     if (!ws || ws.readyState !== 1) return false;
     if (ws.bufferedAmount > 16000) return false;
     try {
-      ws.send(JSON.stringify(payload));
+      ws.send(payload instanceof Uint8Array ? payload : JSON.stringify(payload));
       return true;
     } catch (e) {
       ws = null;
@@ -279,18 +286,34 @@ public class LedScriptService : IHostedService, IDisposable
   function colorToHex(c) { return toHex(c[0]) + toHex(c[1]) + toHex(c[2]); }
 
   function sendColors(colors) {
-    // WLED JSON API: on/bri and individual LED data must not be combined in one
-    // request — turning on from an off state with i: in the same payload is a
-    // documented no-op.  Send two sequential frames instead.
-    trySend({ on: true, bri: config.brightness });
-    // ESP8266 WLED has an ArduinoJson document size limit; empirically safe at
-    // 32 hex-encoded colours per WebSocket message.  Batches after the first use
-    // the [startIndex, hex, hex, ...] form so WLED places each chunk at the
-    // correct strip position without touching the remaining LEDs.
-    var BATCH = 32;
-    for (var start = 0; start < colors.length; start += BATCH) {
-      var chunk = colors.slice(start, start + BATCH).map(colorToHex);
-      trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
+    // Send on/bri once per connection rather than every frame — avoids
+    // unnecessary WLED state-save overhead at 10 fps.
+    if (!ledsOn) {
+      trySend({ on: true, bri: config.brightness });
+    }
+
+    if (isRealWled) {
+      // WLED binary live-data protocol (DRGB format, WebSocket binary frame):
+      //   byte 0 = 0x02  — all LEDs from index 0
+      //   byte 1 = 5     — revert to saved state after 5 s with no new frame
+      //   bytes 2+ = R, G, B triplets
+      // One 812-byte binary frame replaces nine batched JSON messages;
+      // there is no JSON parsing on the device so ArduinoJson buffer limits
+      // and TCP congestion caused by rapid JSON frames are both eliminated.
+      var n = colors.length;
+      var buf = new Uint8Array(2 + n * 3);
+      buf[0] = 2; buf[1] = 5;
+      for (var i = 0; i < n; i++) {
+        var base = 2 + i * 3;
+        buf[base]   = Math.max(0, Math.min(255, Math.round(colors[i][0])));
+        buf[base+1] = Math.max(0, Math.min(255, Math.round(colors[i][1])));
+        buf[base+2] = Math.max(0, Math.min(255, Math.round(colors[i][2])));
+      }
+      trySend(buf);
+    } else {
+      // Mock server (Node.js) and unconfirmed devices: single JSON hex-array.
+      // Node.js has no ArduinoJson limits so all LEDs fit in one frame.
+      trySend({ seg: [{ i: colors.map(colorToHex) }] });
     }
   }
 
