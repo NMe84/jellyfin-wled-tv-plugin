@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## Changes\n\n**Fix: restore working LED updates from v1.1.4.0**\n\nEvery version from v1.1.5.0 to v1.1.7.0 broke LED colour updates for one of three reasons:\n\n- v1.1.5.0: binary WebSocket frames are silently ignored by WLED (WebSocket is JSON-only)\n- v1.1.6.0: a single 270-LED JSON frame exceeds the ESP8266 ArduinoJson buffer (error 9 on every tick)\n- v1.1.7.0: setTimeout pacing - tick() shortens the next interval by the elapsed processing time, so the next sendColors fires and cancels still-pending timers before they run, resulting in no LED updates\n\nThis release restores v1.1.4.0's synchronous burst approach (all 9 batches of 32 LEDs sent in one JS tick) with one change: on/bri is sent once per WebSocket connection instead of every frame. The per-frame on/bri was the source of the TCP congestion in v1.1.4.0.",
+        "checksum": "3561e5ed95f0e177e36bee94d2f134f3",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.8.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-23T21:09:28Z",
+        "version": "1.1.8.0"
+      },
+      {
         "changelog": "## Changes\n\n**Fix: LED freeze / catch-up congestion (root cause analysis and correct fix)**\n\nEvery release since 1.1.4.0 failed for an explainable reason:\n\n- **1.1.5.0 (binary frames)**: WLED's WebSocket interface only accepts JSON text frames. Binary frames are silently ignored. The on/bri JSON worked (LEDs turned on to solid color), but the binary color data was dropped.\n- **1.1.6.0 (single 270-LED JSON)**: error 9 on every frame. 270 hex strings exceeds the ESP8266 ArduinoJson document buffer (~32 entries max, confirmed empirically). on/bri worked, color data was silently dropped.\n- **1.1.4.0 (32-LED batching)**: correct data, but all 9 batches were fired synchronously in one JavaScript tick. This flooded the ESP8266 TCP receive buffer and caused the freeze-then-catch-up congestion.\n\n**This release** keeps 32-LED hex-string batching (the only approach that works on ESP8266) but spreads the 9 batch sends across 80% of the tick window using setTimeout. At 25 fps (40 ms ticks) the spacing is 4 ms per batch, giving the device ~3 ms of idle time between each ~1-2 ms JSON parse. The TCP buffer never fills up.",
         "checksum": "599a48d5fce1f6c4fc6e4375ca2cf473",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.7.0/Jellyfin.Plugin.WledTv.zip",
