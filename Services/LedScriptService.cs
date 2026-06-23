@@ -281,26 +281,25 @@ public class LedScriptService : IHostedService, IDisposable
   function colorToHex(c) { return toHex(c[0]) + toHex(c[1]) + toHex(c[2]); }
 
   function sendColors(colors) {
-    // Send on/bri once per connection rather than every frame — the per-frame
-    // send in v1.1.4.0 was the source of TCP congestion.
+    // Send on/bri once per connection rather than every frame.
     if (!ledsOn) {
       trySend({ on: true, bri: config.brightness });
     }
-    // All batches sent synchronously in one JS tick so WLED receives the full
-    // strip update as a burst before its effect engine can overwrite any LEDs.
-    // Deferred sends (setTimeout) were tried in v1.1.7.0 but the tick interval
-    // is shortened by captureFrame/computeLedColors elapsed time, causing the
-    // next tick's sendColors to cancel still-pending timers from the previous
-    // tick before they fire, resulting in partial or no LED updates.
-    //
-    // Batch size: empirically tested against this ESP8266 device — 56 LEDs OK,
-    // 58 error 9.  54 gives 5 batches for a 270-LED strip (270/54 = 5 exactly)
-    // with a comfortable 4-LED margin from the ArduinoJson buffer limit.
-    // This reduces messages from 9 (at 32) to 5 per tick.
-    var BATCH = 54;
-    for (var start = 0; start < colors.length; start += BATCH) {
-      var chunk = colors.slice(start, start + BATCH).map(colorToHex);
-      trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
+    if (config.batchUpdates) {
+      // Batch mode: required for ESP8266 — ArduinoJson buffer limit is ~57 hex-string
+      // LEDs per message (58 gives error 9 on tested device).  54 gives exactly 5
+      // equal batches for a 270-LED strip with a 4-LED safety margin.
+      // All batches sent synchronously in one JS tick (setTimeout spreading was tried
+      // in v1.1.7.0 but the shortened tick interval cancelled pending timers).
+      var BATCH = 54;
+      for (var start = 0; start < colors.length; start += BATCH) {
+        var chunk = colors.slice(start, start + BATCH).map(colorToHex);
+        trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
+      }
+    } else {
+      // Single-frame mode: ESP32 and other controllers with ample heap.
+      // Sends all LEDs in one message — 1 msg/frame instead of 5.
+      trySend({ seg: [{ i: colors.map(colorToHex) }] });
     }
   }
 

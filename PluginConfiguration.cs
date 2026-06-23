@@ -48,6 +48,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Has no effect when connected to a real WLED device.
     /// </summary>
     public bool MockLogging { get; set; } = false;
+
+    /// <summary>
+    /// When true, colour updates are split into 54-LED batches to stay within the
+    /// ArduinoJson buffer limit on ESP8266 devices.  Disable on ESP32 controllers
+    /// (and other devices with ample heap) to send all LEDs in a single message.
+    /// </summary>
+    public bool BatchUpdates { get; set; } = true;
 }
 
 public enum LedLoopStart

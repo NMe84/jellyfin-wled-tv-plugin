@@ -46,7 +46,8 @@ public class WledTvController : ControllerBase
             brightness         = Config.Brightness,
             deviceId           = Config.DeviceId,
             captureMethod      = Config.CaptureMethod,
-            mockLogging        = Config.MockLogging
+            mockLogging        = Config.MockLogging,
+            batchUpdates       = Config.BatchUpdates
         });
 
     // ── Admin settings endpoints (used by the config page) ───────────────────
@@ -68,7 +69,8 @@ public class WledTvController : ControllerBase
             brightness         = Config.Brightness,
             deviceId           = Config.DeviceId,
             captureMethod      = Config.CaptureMethod,
-            mockLogging        = Config.MockLogging
+            mockLogging        = Config.MockLogging,
+            batchUpdates       = Config.BatchUpdates
         });
 
     [HttpPost("settings")]
@@ -89,6 +91,7 @@ public class WledTvController : ControllerBase
         cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
         cfg.CaptureMethod      = Math.Clamp(s.CaptureMethod, 0, 1);
         cfg.MockLogging        = s.MockLogging;
+        cfg.BatchUpdates       = s.BatchUpdates;
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
     }
@@ -134,4 +137,5 @@ public class SettingsPayload
     public string DeviceId           { get; set; } = string.Empty;
     public int    CaptureMethod      { get; set; } = 0;
     public bool   MockLogging        { get; set; } = false;
+    public bool   BatchUpdates       { get; set; } = true;
 }

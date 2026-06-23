@@ -142,6 +142,20 @@
                     </div>
                 </div>
 
+                <!-- Batch updates -->
+                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:.5em;">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="chkBatchUpdates" is="emby-checkbox" class="emby-checkbox">
+                        <span>Update LEDs in batches</span>
+                    </label>
+                </div>
+                <div class="fieldDescription" style="margin-bottom:1.5em;">
+                    Splits each colour frame into batches of 54 LEDs. Required for ESP8266 and other
+                    controllers with limited memory (disabling causes error 9 on those devices).
+                    Safe to turn off on ESP32 and other controllers with ample heap — sends all LEDs
+                    in a single message, reducing messages per frame from 5 to 1 on a 65 inch TV.
+                </div>
+
                 <!-- Mock debug logging -->
                 <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:1.5em;">
                     <label class="emby-checkbox-label">
@@ -213,6 +227,7 @@
         var chkEn           = document.getElementById('chkEnabled');
         var selDevice       = document.getElementById('selDeviceId');
         var selCapture      = document.getElementById('selCaptureMethod');
+        var chkBatchUpdates = document.getElementById('chkBatchUpdates');
         var chkMockLogging  = document.getElementById('chkMockLogging');
         var txtUrl    = document.getElementById('txtWledWsUrl');
         var btnTest   = document.getElementById('btnTest');
@@ -263,6 +278,7 @@
             lblDepth.textContent        = rngDepth.value;
             lblBri.textContent          = rngBri.value;
             selCapture.value            = String(cfg.captureMethod || 0);
+            chkBatchUpdates.checked     = cfg.batchUpdates !== false;
             chkMockLogging.checked      = cfg.mockLogging === true;
             updateSummary();
 
@@ -351,6 +367,7 @@
                     updateIntervalMs:   parseInt(numMs.value),
                     deviceId:           selDevice.value,
                     captureMethod:      parseInt(selCapture.value),
+                    batchUpdates:       chkBatchUpdates.checked,
                     mockLogging:        chkMockLogging.checked
                 })
             })
