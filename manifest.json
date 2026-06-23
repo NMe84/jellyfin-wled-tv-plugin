@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## Changes\n\n**Perf: increase batch size from 32 to 54 LEDs (9 to 5 batches per frame)**\n\nBatch sizes 48 through 62 were tested against the live ESP8266 device (270 LEDs, 17 KB free heap):\n\n- 48, 50, 54, 56: OK\n- 58, 60, 62: error 9 (ArduinoJson buffer exceeded)\n\nMaximum safe batch size is 56. Using 54 for a 4-LED safety margin, and because 270 / 54 = 5 exactly (five equal batches, no partial chunk).\n\nThis reduces WebSocket messages per frame from 9 to 5, cutting ArduinoJson parse operations from ~225 to ~125 per second at 25 fps — a 44% reduction in ESP8266 processing load.",
+        "checksum": "c8a13fae7f7a0908572d843d76d49676",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.9.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-23T21:21:33Z",
+        "version": "1.1.9.0"
+      },
+      {
         "changelog": "## Changes\n\n**Fix: restore working LED updates from v1.1.4.0**\n\nEvery version from v1.1.5.0 to v1.1.7.0 broke LED colour updates for one of three reasons:\n\n- v1.1.5.0: binary WebSocket frames are silently ignored by WLED (WebSocket is JSON-only)\n- v1.1.6.0: a single 270-LED JSON frame exceeds the ESP8266 ArduinoJson buffer (error 9 on every tick)\n- v1.1.7.0: setTimeout pacing - tick() shortens the next interval by the elapsed processing time, so the next sendColors fires and cancels still-pending timers before they run, resulting in no LED updates\n\nThis release restores v1.1.4.0's synchronous burst approach (all 9 batches of 32 LEDs sent in one JS tick) with one change: on/bri is sent once per WebSocket connection instead of every frame. The per-frame on/bri was the source of the TCP congestion in v1.1.4.0.",
         "checksum": "3561e5ed95f0e177e36bee94d2f134f3",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.1.8.0/Jellyfin.Plugin.WledTv.zip",
