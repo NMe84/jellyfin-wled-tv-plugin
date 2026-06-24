@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.2.4.0\n\n### Fixed\n- **Final LED segment not updating at full frame rate** — switched batch mode from 5 × JSON messages to a single binary DRGB WebSocket frame (782 bytes for 260 LEDs). WLED applies the whole strip atomically in one main-loop pass; there are no longer inter-batch render gaps on ESP8266.\n- **Video stretched to 16:9 on LG TV (WebOS)** — the video element is now promoted to a GPU compositing layer via `transform: translateZ(0)` on the first captured frame. This prevents WebOS from entering hardware-overlay mode so the overlay→composited transition that reset `object-fit` can no longer occur.\n- **on/bri JSON sent every frame** — the `ledsOn` flag was never being set to `true` (trySend return value was discarded). Fixed so the brightness message is only sent once per WebSocket connection.",
+        "checksum": "3776ee3a9b61c85985b330d4fe991541",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.4.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-24T23:31:13Z",
+        "version": "1.2.4.0"
+      },
+      {
         "changelog": "## v1.2.3.0\n\n### Fixed\n- **Final LED batch not updating** — replaced fixed 54-LED batches with a dynamic equal-size calculation. A 260-LED strip now uses 52-LED batches (5 × 52 = 260) instead of 4 × 54 + a boundary-touching remainder that WLED/ESP8266 mishandled.\n- **Video stretched to 16:9 on LG TV (WebOS)** — moved `object-fit: contain` enforcement to *after* the canvas/WebGL frame read, using `setProperty` with `!important`. On WebOS, `texImage2D(video)` can synchronously reset the video element's `object-fit`; the previous fix applied it too early.",
         "checksum": "176bf25d13ef370b55b16b238d5c324e",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.3.0/Jellyfin.Plugin.WledTv.zip",
