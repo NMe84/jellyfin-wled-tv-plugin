@@ -294,6 +294,12 @@ public class LedScriptService : IHostedService, IDisposable
       var BATCH = 54;
       for (var start = 0; start < colors.length; start += BATCH) {
         var chunk = colors.slice(start, start + BATCH).map(colorToHex);
+        // Pad the final partial batch to a full BATCH so every message has the
+        // same array length.  WLED's indexed i-array parser does not handle
+        // shorter chunks consistently; padding with black (000000) works around
+        // this.  LED indices beyond the configured strip length are ignored by
+        // WLED, so the padding is safe.
+        while (chunk.length < BATCH) { chunk.push('000000'); }
         trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
       }
     } else {
