@@ -287,17 +287,14 @@ public class LedScriptService : IHostedService, IDisposable
     }
     if (config.batchUpdates) {
       // Batch mode: required for ESP8266 — ArduinoJson buffer limit is ~57 hex-string
-      // LEDs per message (58 gives error 9 on tested device).  54 gives exactly 5
-      // equal batches for a 270-LED strip with a 4-LED safety margin.
-      // All batches sent synchronously in one JS tick (setTimeout spreading was tried
-      // in v1.1.7.0 but the shortened tick interval cancelled pending timers).
-      var BATCH = 54;
+      // LEDs per message (58 gives error 9 on tested device).
+      // Compute the largest equal batch size ≤ 54 that divides the strip evenly.
+      // For 260 LEDs this gives 52 (5 × 52 = 260); for 270 it stays at 54 (5 × 54 = 270).
+      // Equal batches avoid WLED/ESP8266 quirks with partial-length or boundary-touching
+      // i-array messages.  Backfill is kept as a safety net for unusual strip counts.
+      var numBatches = Math.ceil(colors.length / 54);
+      var BATCH = Math.ceil(colors.length / numBatches);
       for (var start = 0; start < colors.length; start += BATCH) {
-        // If this would be a partial final batch, backfill its start so it
-        // still covers exactly BATCH LEDs.  The overlap with the previous
-        // batch is harmless (same frame, same colours).  This avoids sending
-        // a short i-array, which WLED on ESP8266 mishandles, and avoids
-        // padding with out-of-range indices, which corrupts ESP8266 heap.
         var batchStart = (start + BATCH > colors.length && colors.length >= BATCH)
           ? colors.length - BATCH
           : start;
@@ -465,6 +462,12 @@ public class LedScriptService : IHostedService, IDisposable
       ctx.drawImage(video, 0, 0, tw, th);
       _framePixels = ctx.getImageData(0, 0, tw, th).data;
     }
+    // Reading the video frame (canvas drawImage or WebGL texImage2D) can
+    // force some platforms (e.g. WebOS hardware overlay) to re-composite
+    // the video as a normal DOM element, resetting object-fit in the
+    // process.  Re-apply with !important immediately after capture so the
+    // video keeps its native aspect ratio rather than stretching to fill.
+    video.style.setProperty('object-fit', 'contain', 'important');
   }
 
   // Averages pixel colour over the given region of _framePixels.
@@ -590,14 +593,6 @@ public class LedScriptService : IHostedService, IDisposable
       return;
     }
     noVideoTicks = 0;
-
-    // On some platforms (WebOS, Tizen) calling ctx.drawImage(video) pulls the
-    // frame out of hardware-overlay mode and resets the video element's inline
-    // object-fit to the browser default (fill = stretch).  Force contain so
-    // the video always maintains its aspect ratio regardless of how we sample.
-    if (video.style.objectFit !== 'contain') {
-      video.style.objectFit = 'contain';
-    }
 
     // Always maintain the WebSocket regardless of video state so we are ready
     // to send as soon as readyState reaches HAVE_CURRENT_DATA (2).
