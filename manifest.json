@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix video displayed stretched when plugin samples frames. On platforms where ctx.drawImage() pulls video out of hardware-overlay mode (WebOS, Tizen, some browsers), the video element's inline object-fit was being reset to the browser default (fill = stretch). The plugin now explicitly ensures object-fit:contain on every tick.",
+        "checksum": "1c32365b0aa0316eb729321dee63f2a0",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.2.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-24T22:08:35Z",
+        "version": "1.2.2.0"
+      },
+      {
         "changelog": "Fix last LED batch ignored by WLED when strip length is not a multiple of 54. The final partial batch is now padded with black (000000) to match the size of all preceding batches. LED indices beyond the configured strip length are ignored by WLED, so padding is safe.",
         "checksum": "31e91c054c1c0027923cac9c79a16aeb",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.1.0/Jellyfin.Plugin.WledTv.zip",
