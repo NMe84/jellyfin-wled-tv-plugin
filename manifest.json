@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.2.5.0\n\nReverts the v1.2.4.0 binary DRGB attempt (DRGB does not work over the WLED WebSocket) and replaces both fixes with root-cause approaches.\n\n### Fixed\n- **Final LED segment barely updates** — the WebSocket buffer guard drops whatever message is *last* in each per-frame burst when the ESP8266 falls behind, which with a fixed order is always the final segment. The batch send order is now **rotated every frame**, so any dropped update is distributed evenly across all segments instead of starving one.\n- **Video stretched to 16:9 on LG TV (WebOS)** — `object-fit` is ignored by the WebOS media plane for hardware-decoded video (confirmed across three attempts). The video element's **box is now sized to the content's aspect ratio** and centred, so it physically cannot stretch; the player's black background forms the letterbox/pillarbox bars. Scoped to the WebGL capture path so desktop browsers are unaffected.",
+        "checksum": "5eeb0c0a1e07ebee263ba5113f725498",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.5.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-24T23:44:59Z",
+        "version": "1.2.5.0"
+      },
+      {
         "changelog": "## v1.2.4.0\n\n### Fixed\n- **Final LED segment not updating at full frame rate** — switched batch mode from 5 × JSON messages to a single binary DRGB WebSocket frame (782 bytes for 260 LEDs). WLED applies the whole strip atomically in one main-loop pass; there are no longer inter-batch render gaps on ESP8266.\n- **Video stretched to 16:9 on LG TV (WebOS)** — the video element is now promoted to a GPU compositing layer via `transform: translateZ(0)` on the first captured frame. This prevents WebOS from entering hardware-overlay mode so the overlay→composited transition that reset `object-fit` can no longer occur.\n- **on/bri JSON sent every frame** — the `ledsOn` flag was never being set to `true` (trySend return value was discarded). Fixed so the brightness message is only sent once per WebSocket connection.",
         "checksum": "3776ee3a9b61c85985b330d4fe991541",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.4.0/Jellyfin.Plugin.WledTv.zip",
