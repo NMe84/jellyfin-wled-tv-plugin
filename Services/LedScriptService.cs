@@ -283,27 +283,31 @@ public class LedScriptService : IHostedService, IDisposable
   function sendColors(colors) {
     // Send on/bri once per connection rather than every frame.
     if (!ledsOn) {
-      trySend({ on: true, bri: config.brightness });
+      ledsOn = trySend({ on: true, bri: config.brightness });
     }
     if (config.batchUpdates) {
-      // Batch mode: required for ESP8266 — ArduinoJson buffer limit is ~57 hex-string
-      // LEDs per message (58 gives error 9 on tested device).
-      // Compute the largest equal batch size ≤ 54 that divides the strip evenly.
-      // For 260 LEDs this gives 52 (5 × 52 = 260); for 270 it stays at 54 (5 × 54 = 270).
-      // Equal batches avoid WLED/ESP8266 quirks with partial-length or boundary-touching
-      // i-array messages.  Backfill is kept as a safety net for unusual strip counts.
-      var numBatches = Math.ceil(colors.length / 54);
-      var BATCH = Math.ceil(colors.length / numBatches);
-      for (var start = 0; start < colors.length; start += BATCH) {
-        var batchStart = (start + BATCH > colors.length && colors.length >= BATCH)
-          ? colors.length - BATCH
-          : start;
-        var chunk = colors.slice(batchStart, batchStart + BATCH).map(colorToHex);
-        trySend({ seg: [{ i: batchStart === 0 ? chunk : [batchStart].concat(chunk) }] });
+      // WLED binary DRGB protocol — single WebSocket message for all LEDs.
+      // No ArduinoJson involved, so the ESP8266 heap limit is irrelevant and
+      // WLED applies the whole strip atomically (no inter-batch render gaps).
+      // Format: [2, timeoutSec, R0, G0, B0, R1, G1, B1, ...]
+      if (!ws || ws.readyState !== 1) return;
+      if (ws.bufferedAmount > 16000) return;
+      var buf = new Uint8Array(2 + colors.length * 3);
+      buf[0] = 2; // DRGB protocol identifier
+      buf[1] = 2; // revert to WLED effect after 2 s of silence
+      for (var i = 0; i < colors.length; i++) {
+        buf[2 + i * 3]     = colors[i][0];
+        buf[2 + i * 3 + 1] = colors[i][1];
+        buf[2 + i * 3 + 2] = colors[i][2];
+      }
+      try {
+        ws.send(buf.buffer);
+      } catch (e) {
+        ws = null;
+        wsRetryAt = Date.now() + 2000;
       }
     } else {
-      // Single-frame mode: ESP32 and other controllers with ample heap.
-      // Sends all LEDs in one message — 1 msg/frame instead of 5.
+      // Single-frame JSON mode: ESP32 and other controllers with ample heap.
       trySend({ seg: [{ i: colors.map(colorToHex) }] });
     }
   }
@@ -462,12 +466,17 @@ public class LedScriptService : IHostedService, IDisposable
       ctx.drawImage(video, 0, 0, tw, th);
       _framePixels = ctx.getImageData(0, 0, tw, th).data;
     }
-    // Reading the video frame (canvas drawImage or WebGL texImage2D) can
-    // force some platforms (e.g. WebOS hardware overlay) to re-composite
-    // the video as a normal DOM element, resetting object-fit in the
-    // process.  Re-apply with !important immediately after capture so the
-    // video keeps its native aspect ratio rather than stretching to fill.
+    // On WebOS, hardware-overlay video is pulled into a GPU compositing layer
+    // the moment texImage2D reads it, and the transition resets the element's
+    // object-fit — causing the video to stretch to fill the 16:9 panel.
+    // translateZ(0) promotes the element to a compositing layer up front so
+    // hardware-overlay mode is never entered and there is no reset to fight.
+    // object-fit: contain !important is re-applied every frame as a guard.
     video.style.setProperty('object-fit', 'contain', 'important');
+    var _t = video.style.transform;
+    if (!_t || _t === 'none') {
+      video.style.transform = 'translateZ(0)';
+    }
   }
 
   // Averages pixel colour over the given region of _framePixels.
