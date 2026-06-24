@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.2.3.0\n\n### Fixed\n- **Final LED batch not updating** — replaced fixed 54-LED batches with a dynamic equal-size calculation. A 260-LED strip now uses 52-LED batches (5 × 52 = 260) instead of 4 × 54 + a boundary-touching remainder that WLED/ESP8266 mishandled.\n- **Video stretched to 16:9 on LG TV (WebOS)** — moved `object-fit: contain` enforcement to *after* the canvas/WebGL frame read, using `setProperty` with `!important`. On WebOS, `texImage2D(video)` can synchronously reset the video element's `object-fit`; the previous fix applied it too early.",
+        "checksum": "176bf25d13ef370b55b16b238d5c324e",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.3.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-24T22:46:36Z",
+        "version": "1.2.3.0"
+      },
+      {
         "changelog": "Fix video displayed stretched when plugin samples frames. On platforms where ctx.drawImage() pulls video out of hardware-overlay mode (WebOS, Tizen, some browsers), the video element's inline object-fit was being reset to the browser default (fill = stretch). The plugin now explicitly ensures object-fit:contain on every tick.",
         "checksum": "1c32365b0aa0316eb729321dee63f2a0",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.2.0/Jellyfin.Plugin.WledTv.zip",
