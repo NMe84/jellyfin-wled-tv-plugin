@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "Fix last LED batch ignored by WLED when strip length is not a multiple of 54. The final partial batch is now padded with black (000000) to match the size of all preceding batches. LED indices beyond the configured strip length are ignored by WLED, so padding is safe.",
+        "checksum": "31e91c054c1c0027923cac9c79a16aeb",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-24T21:12:55Z",
+        "version": "1.2.1.0"
+      },
+      {
         "changelog": "Add 'Update LEDs in batches' setting. When enabled (default, ESP8266 compatible), colours are sent in 54-LED batches. When disabled, all LEDs are sent in a single frame — intended for ESP32 and other controllers with ample heap.",
         "checksum": "19f0735e5d7248e00bc5439d4b5bac4a",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.0.0/Jellyfin.Plugin.WledTv.zip",
