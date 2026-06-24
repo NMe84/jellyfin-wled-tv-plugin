@@ -293,14 +293,16 @@ public class LedScriptService : IHostedService, IDisposable
       // in v1.1.7.0 but the shortened tick interval cancelled pending timers).
       var BATCH = 54;
       for (var start = 0; start < colors.length; start += BATCH) {
-        var chunk = colors.slice(start, start + BATCH).map(colorToHex);
-        // Pad the final partial batch to a full BATCH so every message has the
-        // same array length.  WLED's indexed i-array parser does not handle
-        // shorter chunks consistently; padding with black (000000) works around
-        // this.  LED indices beyond the configured strip length are ignored by
-        // WLED, so the padding is safe.
-        while (chunk.length < BATCH) { chunk.push('000000'); }
-        trySend({ seg: [{ i: start === 0 ? chunk : [start].concat(chunk) }] });
+        // If this would be a partial final batch, backfill its start so it
+        // still covers exactly BATCH LEDs.  The overlap with the previous
+        // batch is harmless (same frame, same colours).  This avoids sending
+        // a short i-array, which WLED on ESP8266 mishandles, and avoids
+        // padding with out-of-range indices, which corrupts ESP8266 heap.
+        var batchStart = (start + BATCH > colors.length && colors.length >= BATCH)
+          ? colors.length - BATCH
+          : start;
+        var chunk = colors.slice(batchStart, batchStart + BATCH).map(colorToHex);
+        trySend({ seg: [{ i: batchStart === 0 ? chunk : [batchStart].concat(chunk) }] });
       }
     } else {
       // Single-frame mode: ESP32 and other controllers with ample heap.
@@ -588,6 +590,14 @@ public class LedScriptService : IHostedService, IDisposable
       return;
     }
     noVideoTicks = 0;
+
+    // On some platforms (WebOS, Tizen) calling ctx.drawImage(video) pulls the
+    // frame out of hardware-overlay mode and resets the video element's inline
+    // object-fit to the browser default (fill = stretch).  Force contain so
+    // the video always maintains its aspect ratio regardless of how we sample.
+    if (video.style.objectFit !== 'contain') {
+      video.style.objectFit = 'contain';
+    }
 
     // Always maintain the WebSocket regardless of video state so we are ready
     // to send as soon as readyState reaches HAVE_CURRENT_DATA (2).
