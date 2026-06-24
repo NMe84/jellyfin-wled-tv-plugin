@@ -162,6 +162,12 @@ public class LedScriptService : IHostedService, IDisposable
   var _wglCtx    = null;   // WebGL context
   var _wglReady  = false;  // true once WebGL setup succeeded
 
+  var _frame     = 0;      // frame counter, used to rotate batch send order
+
+  // Aspect-ratio enforcement (WebOS WebGL path only)
+  var _arKey          = '';    // last applied 'WxH' box, so we only touch styles on change
+  var _videoStyleSaved = null; // original inline style attribute, restored on stop
+
   // ── Config ────────────────────────────────────────────────────────────────
 
   function baseUrl() {
@@ -290,17 +296,32 @@ public class LedScriptService : IHostedService, IDisposable
       // LEDs per message (58 gives error 9 on tested device).
       // Compute the largest equal batch size ≤ 54 that divides the strip evenly.
       // For 260 LEDs this gives 52 (5 × 52 = 260); for 270 it stays at 54 (5 × 54 = 270).
-      // Equal batches avoid WLED/ESP8266 quirks with partial-length or boundary-touching
-      // i-array messages.  Backfill is kept as a safety net for unusual strip counts.
       var numBatches = Math.ceil(colors.length / 54);
       var BATCH = Math.ceil(colors.length / numBatches);
+
+      // Build the per-batch payloads for this frame.
+      var batches = [];
       for (var start = 0; start < colors.length; start += BATCH) {
         var batchStart = (start + BATCH > colors.length && colors.length >= BATCH)
           ? colors.length - BATCH
           : start;
         var chunk = colors.slice(batchStart, batchStart + BATCH).map(colorToHex);
-        trySend({ seg: [{ i: batchStart === 0 ? chunk : [batchStart].concat(chunk) }] });
+        batches.push({ seg: [{ i: batchStart === 0 ? chunk : [batchStart].concat(chunk) }] });
       }
+
+      // Rotate the send order every frame.  When the ESP8266 cannot parse all
+      // batches within one frame interval, the WebSocket buffer fills and
+      // trySend drops whatever comes LAST in the burst.  With a fixed order
+      // that is always the same (final) segment, so it appears to never update.
+      // Rotating the starting batch spreads any dropped update evenly across all
+      // segments, so on average every segment updates (numBatches-1)/numBatches
+      // of the time instead of one segment being permanently starved.
+      var n   = batches.length;
+      var off = n > 0 ? (_frame % n) : 0;
+      for (var k = 0; k < n; k++) {
+        trySend(batches[(off + k) % n]);
+      }
+      _frame++;
     } else {
       // Single-frame mode: ESP32 and other controllers with ample heap.
       // Sends all LEDs in one message — 1 msg/frame instead of 5.
@@ -462,12 +483,53 @@ public class LedScriptService : IHostedService, IDisposable
       ctx.drawImage(video, 0, 0, tw, th);
       _framePixels = ctx.getImageData(0, 0, tw, th).data;
     }
-    // Reading the video frame (canvas drawImage or WebGL texImage2D) can
-    // force some platforms (e.g. WebOS hardware overlay) to re-composite
-    // the video as a normal DOM element, resetting object-fit in the
-    // process.  Re-apply with !important immediately after capture so the
-    // video keeps its native aspect ratio rather than stretching to fill.
-    video.style.setProperty('object-fit', 'contain', 'important');
+    // On the WebGL/WebOS path, reading the frame de-overlays the video and the
+    // hardware media plane then stretches it to fill the element box, ignoring
+    // CSS object-fit (confirmed: setting object-fit had no effect).  Give the
+    // element box itself the content's aspect ratio so it cannot stretch.
+    if (config && config.captureMethod === 1) {
+      enforceAspect(video);
+    }
+  }
+
+  // Sizes the video element to the largest box with the content's aspect ratio
+  // that fits the viewport, centred via auto margins.  The player's black
+  // background shows through the surrounding area as the letterbox/pillarbox
+  // bars.  This bypasses object-fit entirely, which WebOS's media plane ignores
+  // for hardware-decoded video.  Only the box dimensions matter to the media
+  // plane; styles are touched only when the target size changes.
+  function enforceAspect(video) {
+    if (!video.videoWidth || !video.videoHeight) return;
+    var boxW = window.innerWidth  || document.documentElement.clientWidth;
+    var boxH = window.innerHeight || document.documentElement.clientHeight;
+    if (!boxW || !boxH) return;
+    var ar = video.videoWidth / video.videoHeight;
+    var W, H;
+    if (boxW / boxH > ar) { H = boxH; W = Math.round(boxH * ar); }
+    else                  { W = boxW; H = Math.round(boxW / ar); }
+    var key = W + 'x' + H;
+    if (key === _arKey) return;             // unchanged since last application
+    if (_videoStyleSaved === null) _videoStyleSaved = video.getAttribute('style') || '';
+    _arKey = key;
+    var s = video.style;
+    s.setProperty('position', 'fixed', 'important');
+    s.setProperty('top',    '0', 'important');
+    s.setProperty('left',   '0', 'important');
+    s.setProperty('right',  '0', 'important');
+    s.setProperty('bottom', '0', 'important');
+    s.setProperty('margin', 'auto', 'important');
+    s.setProperty('width',  W + 'px', 'important');
+    s.setProperty('height', H + 'px', 'important');
+    s.setProperty('object-fit', 'contain', 'important'); // harmless where honoured
+  }
+
+  // Restores the video element's original inline style (undoes enforceAspect).
+  function restoreVideoStyle() {
+    if (_videoStyleSaved === null) return;
+    var v = document.querySelector('video');
+    if (v) v.setAttribute('style', _videoStyleSaved);
+    _videoStyleSaved = null;
+    _arKey = '';
   }
 
   // Averages pixel colour over the given region of _framePixels.
@@ -689,6 +751,7 @@ public class LedScriptService : IHostedService, IDisposable
     running = false;
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
     console.log('[wledtv] stop (off=' + !!turnOff + ')');
+    restoreVideoStyle(); // undo any aspect-ratio box sizing we applied
     if (turnOff && ledsOn) { sendOff(); ledsOn = false; }
     if (turnOff) closeWs();
   }
