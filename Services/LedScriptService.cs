@@ -502,12 +502,18 @@ public class LedScriptService : IHostedService, IDisposable
     }
   }
 
-  // Sizes the video element to the largest box with the content's aspect ratio
-  // that fits the viewport, centred via auto margins.  The player's black
-  // background shows through the surrounding area as the letterbox/pillarbox
-  // bars.  This bypasses object-fit entirely, which WebOS's media plane ignores
-  // for hardware-decoded video.  Only the box dimensions matter to the media
-  // plane; styles are touched only when the target size changes.
+  // Constrains the video element's BOX to the content's aspect ratio so the
+  // WebOS media plane (which ignores object-fit for hardware-decoded video and
+  // stretches to fill the element box) cannot distort it.
+  //
+  // Critically, this ONLY sets width/height/margin — never position, inset, or
+  // z-index.  Changing the box size does not affect paint order, so Jellyfin's
+  // subtitle overlay keeps rendering above the video exactly as it did before
+  // the plugin.  Earlier versions changed position/inset, which lifted the
+  // video above the subtitle layer and hid the subtitles.  Centring is left to
+  // the player's existing layout: its container centres the video (flex or
+  // absolute inset), and margin:auto handles the remaining axis without
+  // disturbing stacking.
   function enforceAspect(video) {
     if (!video.videoWidth || !video.videoHeight) return;
     var boxW = window.innerWidth  || document.documentElement.clientWidth;
@@ -522,22 +528,11 @@ public class LedScriptService : IHostedService, IDisposable
     if (_videoStyleSaved === null) _videoStyleSaved = video.getAttribute('style') || '';
     _arKey = key;
     var s = video.style;
-    // Centre the box via auto margins within its EXISTING containing block.
-    // We deliberately avoid position:fixed here — that lifts the video into its
-    // own viewport stacking context and paints it over Jellyfin's subtitle
-    // overlay, hiding the subtitles.  The player's video element is normally
-    // already absolutely positioned and fills the (full-screen) container, so
-    // keeping its position preserves the stacking order and subtitle layer.
-    if (getComputedStyle(video).position === 'static') {
-      s.setProperty('position', 'absolute', 'important');
-    }
-    s.setProperty('top',    '0', 'important');
-    s.setProperty('left',   '0', 'important');
-    s.setProperty('right',  '0', 'important');
-    s.setProperty('bottom', '0', 'important');
-    s.setProperty('margin', 'auto', 'important');
-    s.setProperty('width',  W + 'px', 'important');
-    s.setProperty('height', H + 'px', 'important');
+    s.setProperty('width',      W + 'px', 'important');
+    s.setProperty('height',     H + 'px', 'important');
+    s.setProperty('max-width',  W + 'px', 'important');
+    s.setProperty('max-height', H + 'px', 'important');
+    s.setProperty('margin',     'auto',   'important'); // centres without changing stacking
     s.setProperty('object-fit', 'contain', 'important'); // harmless where honoured
   }
 
