@@ -287,6 +287,19 @@ public class LedScriptService : IHostedService, IDisposable
   function colorToHex(c) { return toHex(c[0]) + toHex(c[1]) + toHex(c[2]); }
 
   function sendColors(colors) {
+    if (!ws || ws.readyState !== 1) return;
+
+    // Frame-level flow control.  Never queue more than ~one frame ahead: if the
+    // previous frame's bytes have not drained to the controller yet, drop THIS
+    // frame entirely instead of growing an unbounded backlog.  Without this, a
+    // controller that falls slightly behind accumulates a multi-frame buffer
+    // that never recovers — observed as playback dropping to ~1 fps after the
+    // first video while the WebSocket buffer stayed saturated.  This self-
+    // throttles to the controller's real throughput; updateIntervalMs then only
+    // sets the *maximum* rate, which is why lowering it had no effect.
+    var maxQueued = colors.length * 8 + 512; // ≈ one full frame of JSON + margin
+    if (ws.bufferedAmount > maxQueued) return;
+
     // Send on/bri once per connection rather than every frame.
     if (!ledsOn) {
       trySend({ on: true, bri: config.brightness });
@@ -309,13 +322,10 @@ public class LedScriptService : IHostedService, IDisposable
         batches.push({ seg: [{ i: batchStart === 0 ? chunk : [batchStart].concat(chunk) }] });
       }
 
-      // Rotate the send order every frame.  When the ESP8266 cannot parse all
-      // batches within one frame interval, the WebSocket buffer fills and
-      // trySend drops whatever comes LAST in the burst.  With a fixed order
-      // that is always the same (final) segment, so it appears to never update.
-      // Rotating the starting batch spreads any dropped update evenly across all
-      // segments, so on average every segment updates (numBatches-1)/numBatches
-      // of the time instead of one segment being permanently starved.
+      // Rotate the send order every frame as defence-in-depth: should a single
+      // burst ever be partially dropped, the loss rotates across segments rather
+      // than always hitting the final one.  With the flow control above the whole
+      // burst normally fits in a drained buffer, so all segments stay in sync.
       var n   = batches.length;
       var off = n > 0 ? (_frame % n) : 0;
       for (var k = 0; k < n; k++) {
@@ -512,7 +522,15 @@ public class LedScriptService : IHostedService, IDisposable
     if (_videoStyleSaved === null) _videoStyleSaved = video.getAttribute('style') || '';
     _arKey = key;
     var s = video.style;
-    s.setProperty('position', 'fixed', 'important');
+    // Centre the box via auto margins within its EXISTING containing block.
+    // We deliberately avoid position:fixed here — that lifts the video into its
+    // own viewport stacking context and paints it over Jellyfin's subtitle
+    // overlay, hiding the subtitles.  The player's video element is normally
+    // already absolutely positioned and fills the (full-screen) container, so
+    // keeping its position preserves the stacking order and subtitle layer.
+    if (getComputedStyle(video).position === 'static') {
+      s.setProperty('position', 'absolute', 'important');
+    }
     s.setProperty('top',    '0', 'important');
     s.setProperty('left',   '0', 'important');
     s.setProperty('right',  '0', 'important');
