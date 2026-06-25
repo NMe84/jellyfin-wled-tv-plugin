@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.2.6.0\n\n### Fixed\n- **Subtitles hidden when edge lighting is active (WebOS)** — the aspect-ratio fix used `position: fixed`, which painted the video over Jellyfin's subtitle overlay. The letterbox box is now centred within the video's existing containing block, preserving the stacking order so subtitles show again. The stretch fix is unchanged.\n- **Frame rate collapses to ~1 fps after the first video** — the old WebSocket buffer guard allowed a multi-frame backlog to accumulate that never drained once the ESP8266 fell behind. Added frame-level flow control: a frame is skipped if the previous one hasn't drained yet, capping latency at one frame and self-throttling to the controller's actual throughput. (This is also why changing the update interval previously had no effect.)",
+        "checksum": "aef414905f2c74f9bf298d342456efeb",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.6.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-25T00:11:03Z",
+        "version": "1.2.6.0"
+      },
+      {
         "changelog": "## v1.2.5.0\n\nReverts the v1.2.4.0 binary DRGB attempt (DRGB does not work over the WLED WebSocket) and replaces both fixes with root-cause approaches.\n\n### Fixed\n- **Final LED segment barely updates** — the WebSocket buffer guard drops whatever message is *last* in each per-frame burst when the ESP8266 falls behind, which with a fixed order is always the final segment. The batch send order is now **rotated every frame**, so any dropped update is distributed evenly across all segments instead of starving one.\n- **Video stretched to 16:9 on LG TV (WebOS)** — `object-fit` is ignored by the WebOS media plane for hardware-decoded video (confirmed across three attempts). The video element's **box is now sized to the content's aspect ratio** and centred, so it physically cannot stretch; the player's black background forms the letterbox/pillarbox bars. Scoped to the WebGL capture path so desktop browsers are unaffected.",
         "checksum": "5eeb0c0a1e07ebee263ba5113f725498",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.5.0/Jellyfin.Plugin.WledTv.zip",
