@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.2.7.0\n\n### Fixed\n- **Subtitles hidden when edge lighting is active (WebOS)** — the aspect-ratio fix was changing the video element's `position`/`inset`, which altered its paint order and lifted it above Jellyfin's subtitle overlay. It now constrains only the box size (`width`/`height`/`margin`/`object-fit`) and never touches `position`, `inset`, or `z-index`. Size changes don't affect stacking order, so the subtitle layer renders on top exactly as in vanilla Jellyfin while the box still prevents the stretch.\n\n### Known issue\n- Frame rate on ESP8266 with a large strip remains limited by the controller's JSON throughput. Expected to be resolved by moving to an ESP32 (disable \"Update LEDs in batches\").",
+        "checksum": "ac5fd7a351a7732acf0fcf8a6baf8317",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.7.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-06-25T00:23:48Z",
+        "version": "1.2.7.0"
+      },
+      {
         "changelog": "## v1.2.6.0\n\n### Fixed\n- **Subtitles hidden when edge lighting is active (WebOS)** — the aspect-ratio fix used `position: fixed`, which painted the video over Jellyfin's subtitle overlay. The letterbox box is now centred within the video's existing containing block, preserving the stacking order so subtitles show again. The stretch fix is unchanged.\n- **Frame rate collapses to ~1 fps after the first video** — the old WebSocket buffer guard allowed a multi-frame backlog to accumulate that never drained once the ESP8266 fell behind. Added frame-level flow control: a frame is skipped if the previous one hasn't drained yet, capping latency at one frame and self-throttling to the controller's actual throughput. (This is also why changing the update interval previously had no effect.)",
         "checksum": "aef414905f2c74f9bf298d342456efeb",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.2.6.0/Jellyfin.Plugin.WledTv.zip",
