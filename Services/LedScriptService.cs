@@ -131,7 +131,8 @@ public class LedScriptService : IHostedService, IDisposable
   var ctx          = null;
 
   var running      = false;  // true while the sampling loop is active
-  var tickTimer    = null;   // handle returned by setTimeout
+  var tickTimer    = null;   // handle returned by setTimeout (fallback scheduler)
+  var _ticker      = null;   // Web Worker timer: null=not built, false=unavailable, else Worker
   var ledsOn       = false;  // true once we have sent at least one colour frame
   var noVideoTicks = 0;      // consecutive ticks with no usable video element
 
@@ -675,10 +676,39 @@ public class LedScriptService : IHostedService, IDisposable
     return colors;
   }
 
+  // Drives the tick loop from a Web Worker timer.  The browser clamps the main
+  // thread's setTimeout to 1 Hz when it considers the page backgrounded — which
+  // WebOS does (incorrectly) after the app is suspended and resumed, turning the
+  // ambilight into a ~1 fps slideshow even though capture itself takes ~5 ms.
+  // Worker timers are exempt from that throttling, so the worker posts back after
+  // each requested delay to keep ticks running at the configured rate.  Falls
+  // back to setTimeout where Workers are unavailable or blocked by CSP.
+  function ensureTicker() {
+    if (_ticker !== null) return;
+    try {
+      var src = 'onmessage=function(e){setTimeout(function(){postMessage(0);},e.data);};';
+      var url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      _ticker = new Worker(url);
+      _ticker.onmessage = function () { tick(); };
+    } catch (e) {
+      _ticker = false; // unavailable — fall back to setTimeout
+    }
+  }
+
+  // Schedules the next tick after delay ms via the worker, or setTimeout if the
+  // worker could not be created.  The worker fires once per request (not a
+  // recurring interval), and tick() bails immediately when !running, so a stray
+  // post after stop() simply no-ops — nothing to cancel.
+  function scheduleNext(delay) {
+    ensureTicker();
+    if (_ticker) { _ticker.postMessage(delay); }
+    else { tickTimer = setTimeout(tick, delay); }
+  }
+
   // ── Main tick ─────────────────────────────────────────────────────────────
   //
   // Design principles:
-  //   • running + tickTimer are the only loop controls (no generation counter).
+  //   • running + scheduleNext are the only loop controls (no generation counter).
   //   • ensureWs() is always called, regardless of video readyState, so the
   //     connection stays warm during HLS buffering / startup.
   //   • drawImage is guarded by readyState >= 2 (HAVE_CURRENT_DATA) to avoid
@@ -718,7 +748,7 @@ public class LedScriptService : IHostedService, IDisposable
       // Keep WebSocket warm while waiting; check again next tick.
       ensureWs();
       if (!running) return;
-      tickTimer = setTimeout(tick, config.updateIntervalMs || 100);
+      scheduleNext(config.updateIntervalMs || 100);
       return;
     }
     noVideoTicks = 0;
@@ -816,7 +846,7 @@ public class LedScriptService : IHostedService, IDisposable
 
     if (!running) return;
     var interval = config.updateIntervalMs || 100;
-    tickTimer = setTimeout(tick, Math.max(0, interval - elapsed));
+    scheduleNext(Math.max(0, interval - elapsed));
   }
 
   function start() {
