@@ -168,6 +168,10 @@ public class LedScriptService : IHostedService, IDisposable
   var _arKey          = '';    // last applied 'WxH' box, so we only touch styles on change
   var _videoStyleSaved = null; // original inline style attribute, restored on stop
 
+  // On-screen diagnostics (rendered only when config.debugMode is enabled)
+  var _diag        = null;   // overlay element, created lazily
+  var _lastTickAt  = 0;      // timestamp of the previous tick, for inter-frame gap
+
   // ── Config ────────────────────────────────────────────────────────────────
 
   function baseUrl() {
@@ -255,10 +259,33 @@ public class LedScriptService : IHostedService, IDisposable
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
   }
 
+  // Renders an on-screen timing overlay (debug mode only) so frame-rate issues
+  // can be diagnosed directly on the TV without a remote console.  Removed again
+  // as soon as debug mode is off or playback stops.
+  function showDiag(text) {
+    if (!config || !config.debugMode) {
+      if (_diag && _diag.parentNode) { _diag.parentNode.removeChild(_diag); _diag = null; }
+      return;
+    }
+    if (!_diag) {
+      _diag = document.createElement('div');
+      _diag.setAttribute('style',
+        'position:fixed;top:8px;left:8px;z-index:2147483647;pointer-events:none;' +
+        'font:12px/1.4 monospace;color:#0f0;background:rgba(0,0,0,.6);' +
+        'padding:4px 6px;white-space:pre;border-radius:3px;');
+      document.body.appendChild(_diag);
+    }
+    _diag.textContent = text;
+  }
+
+  function hideDiag() {
+    if (_diag && _diag.parentNode) { _diag.parentNode.removeChild(_diag); _diag = null; }
+  }
+
   // Send a log message back to the mock server.
-  // No-op on real WLED or when mock logging is disabled in settings.
+  // No-op on real WLED or when debug mode is disabled in settings.
   function logToMock(msg) {
-    if (!isMock || !config || !config.mockLogging) return;
+    if (!isMock || !config || !config.debugMode) return;
     if (!ws || ws.readyState !== 1) return;
     try { ws.send(JSON.stringify({ log: msg })); } catch (e) {}
   }
@@ -710,9 +737,16 @@ public class LedScriptService : IHostedService, IDisposable
     // simply hold the last colour until playback resumes.
     if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
       var t0 = Date.now();
+      // Inter-frame gap: time since the previous processed tick.  A large gap
+      // while capMs is small means the scheduler (setTimeout) is being throttled
+      // rather than the capture being slow.
+      var gap = _lastTickAt ? (t0 - _lastTickAt) : 0;
+      _lastTickAt = t0;
+      var capMs = 0, sendMs = 0;
       try {
         // captureFrame sets canvas + _framePixels at 1/4 scale
         captureFrame(video);
+        capMs = Date.now() - t0;
         // Log frame diagnostics to the mock server periodically.
         // Read centre pixel directly from the pre-read array — no extra getImageData.
         if (isMock) {
@@ -742,12 +776,21 @@ public class LedScriptService : IHostedService, IDisposable
         }
         var colors = computeLedColors();
         if (config.direction === 0) colors.reverse(); // 0 = Clockwise
+        var tSend = Date.now();
         sendColors(colors);
+        sendMs = Date.now() - tSend;
         ledsOn = true;
       } catch (e) {
         // drawImage / getImageData throws on DRM content — skip frame, keep looping
       }
       elapsed = Date.now() - t0;
+      // Update the on-screen diagnostics overlay (no-op unless debug mode is on).
+      showDiag(
+        'wledtv ' + (config.captureMethod === 1 ? 'webgl' : 'canvas2d') + '\n' +
+        'cap  ' + capMs  + 'ms\n' +
+        'send ' + sendMs + 'ms\n' +
+        'gap  ' + gap    + 'ms\n' +
+        'ws   ' + (ws ? ws.readyState : 'null') + ' buf ' + (ws ? ws.bufferedAmount : '-'));
     } else {
       // Log to mock server why sampling is being skipped (rate-limited to 3 s)
       if (isMock) {
@@ -797,6 +840,7 @@ public class LedScriptService : IHostedService, IDisposable
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
     console.log('[wledtv] stop (off=' + !!turnOff + ')');
     restoreVideoStyle(); // undo any aspect-ratio box sizing we applied
+    hideDiag();          // remove the diagnostics overlay
     if (turnOff && ledsOn) { sendOff(); ledsOn = false; }
     if (turnOff) closeWs();
   }

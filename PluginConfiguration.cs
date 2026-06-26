@@ -44,10 +44,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public int CaptureMethod { get; set; } = 0;
 
     /// <summary>
-    /// When true, send diagnostic log messages to wled-ambilight-mock via WebSocket.
-    /// Has no effect when connected to a real WLED device.
+    /// When true, enable diagnostics: an on-screen timing overlay on the playing
+    /// device, and (when connected to wled-ambilight-mock) diagnostic log
+    /// messages streamed back over the WebSocket.  Leave off in normal use.
     /// </summary>
-    public bool MockLogging { get; set; } = false;
+    public bool DebugMode { get; set; } = false;
 
     /// <summary>
     /// When true, colour updates are split into 54-LED batches to stay within the

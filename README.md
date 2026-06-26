@@ -38,7 +38,8 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Brightness | Master brightness sent to WLED (0–255) |
 | Update interval | Milliseconds between colour updates (100 ms = 10 fps) |
 | Capture method | **Canvas 2D** (default) works on most platforms. Switch to **WebGL** on devices where the video decoder renders to a hardware overlay inaccessible to Canvas 2D, such as LG WebOS |
-| Send debug logs to mock WLED server | When connected to [wled-ambilight-mock](https://github.com/NMe84/wled-ambilight-mock), stream diagnostic frame and state messages back through the WebSocket for troubleshooting. Has no effect on a real WLED device |
+| Update LEDs in batches | Splits each colour frame into 54-LED batches. **Required for ESP8266** and other controllers with limited memory (disabling causes error 9 on those devices). Turn **off** on ESP32 and other controllers with ample heap to send the whole strip in a single message per frame instead of several |
+| Debug mode | Shows a small on-screen timing overlay (capture time, frame gap, WebSocket state) on the playing device to help diagnose frame-rate problems, and — when connected to [wled-ambilight-mock](https://github.com/NMe84/wled-ambilight-mock) — streams diagnostic frame and state messages back through the WebSocket. Leave off in normal use |
 
 ## Testing without hardware
 
