@@ -403,8 +403,35 @@ public class LedScriptService : IHostedService, IDisposable
   // WebGL texture uploads use a different GPU path and can access those frames.
   // After 3 consecutive all-black Canvas 2D frames we transparently switch.
 
+  // Releases the WebGL context and its GPU resources so the next capture builds
+  // a fresh one.  Called on playback start and when the app is backgrounded, so
+  // a context the TV degraded during a suspend/resume cycle cannot persist for
+  // the life of the page — that degraded context is the cause of capture
+  // dropping to ~1 fps (correct pixels, but very slow) after leaving and
+  // re-entering Jellyfin.  loseContext() frees the GPU side immediately and the
+  // old canvas is dropped for GC.  Browsers cap live contexts (~16), so we MUST
+  // release before recreating, or repeated rebuilds would leak contexts.
+  function _destroyWebGL() {
+    if (_wglCtx) {
+      try {
+        var ext = _wglCtx.getExtension('WEBGL_lose_context');
+        if (ext) ext.loseContext();
+      } catch (e) {}
+    }
+    _wglCanvas = null;
+    _wglCtx    = null;
+    _wglReady  = false;
+  }
+
   function _setupWebGL() {
-    if (_wglCanvas !== null) return _wglReady;
+    // Reuse the live context; rebuild only if it is missing or outright lost.
+    // The slow-after-resume case (context alive but degraded) is handled by
+    // _destroyWebGL() on playback start; this guard additionally recovers from
+    // a context the browser reports as fully lost.
+    if (_wglCanvas !== null) {
+      if (_wglCtx && !_wglCtx.isContextLost()) return _wglReady;
+      _destroyWebGL();
+    }
     _wglCanvas = document.createElement('canvas');
     try {
       _wglCtx = _wglCanvas.getContext('webgl') ||
@@ -753,6 +780,11 @@ public class LedScriptService : IHostedService, IDisposable
     if (running) return;
     running = true;
     ledsOn  = false;
+    // Start every playback with a fresh GPU context.  A context inherited from
+    // before a suspend/resume cycle can be alive but degraded (correct pixels at
+    // ~1 fps); rebuilding it here restores full-rate capture.  No-op on the
+    // Canvas 2D path.
+    _destroyWebGL();
     console.log('[wledtv] start');
     tick(); // first tick immediately
   }
@@ -784,6 +816,13 @@ public class LedScriptService : IHostedService, IDisposable
       });
     }
   }
+
+  // When the app is backgrounded (e.g. leaving Jellyfin on the TV) stop cleanly
+  // and drop the GPU context, so a context degraded by the suspend cannot linger
+  // for the life of the page.  poll() rebuilds everything fresh on resume.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { stop(true); _destroyWebGL(); }
+  });
 
   setInterval(poll, 1000);
   poll();
