@@ -9,11 +9,11 @@
     "owner": "nme84",
     "versions": [
       {
-        "changelog": "## v1.4.1.0\n\n### Fixed\n- **Letterbox/pillarbox LEDs now follow the on-screen picture, not the raw video frame** — the capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are not in the captured pixels; the compositor adds them on screen. The plugin was mapping LEDs across the raw frame edges, which stretched a 4:3 picture across the whole strip and lit the top/bottom LEDs over the side bars (this occurred regardless of the detection toggles).\n\n  LEDs are now mapped to the video's actual on-screen rectangle, computed from the video-vs-panel aspect ratio. For a 4:3 video on a 16:9 TV the full left/right strips light up (mapped to the sides of the video) while only the middle of the top/bottom strips light up — the LEDs over the black bars stay dark. Letterboxed content behaves as the mirror image. Bars baked into the video file are still handled and composed through the same placement.\n\nThe WebGL sampler (capture path) is unchanged.",
-        "checksum": "466d5ad69edcc34e488496bf597db944",
+        "changelog": "## v1.4.1.0\n\nReworks how letterbox/pillarbox handling maps the LEDs so they follow the picture as it actually appears on the panel.\n\n### Fixed\n- **LEDs now follow the on-screen picture, not the raw video frame.** The capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are never in the captured pixels — the compositor adds them on screen. The video's on-screen rectangle is now derived from the video-vs-panel aspect ratio, and LEDs over a bar stay dark instead of the picture being stretched across the whole strip.\n\n### Toggle behaviour\n- The LEDs over the black bars are **always** dark, regardless of the toggles.\n- **Detect pillarboxing** controls the left/right strips: **on** maps them to the video's side edges (lit); **off** leaves them dark.\n- **Detect letterboxing** controls the top/bottom strips: **on** maps them to the video's top/bottom (lit); **off** leaves them dark.\n- Example — a 4:3 video on a 16:9 TV with pillarbox **off**: the sides stay dark and only the middle of the top/bottom strips light up; with pillarbox **on** the full sides light up too, mapped to the edges of the video.\n\nBars baked into the video file are handled the same way. The WebGL sampler (capture path) is unchanged.",
+        "checksum": "d0aba115c4d2b0d2de68b99fab7f87da",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.1.0/Jellyfin.Plugin.WledTv.zip",
         "targetAbi": "10.11.9.0",
-        "timestamp": "2026-08-07T12:30:52Z",
+        "timestamp": "2026-08-07T12:45:08Z",
         "version": "1.4.1.0"
       },
       {
