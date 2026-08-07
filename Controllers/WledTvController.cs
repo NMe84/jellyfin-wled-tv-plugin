@@ -47,7 +47,9 @@ public class WledTvController : ControllerBase
             deviceId           = Config.DeviceId,
             captureMethod      = Config.CaptureMethod,
             debugMode          = Config.DebugMode,
-            batchUpdates       = Config.BatchUpdates
+            batchUpdates       = Config.BatchUpdates,
+            detectLetterbox    = Config.DetectLetterbox,
+            detectPillarbox    = Config.DetectPillarbox
         });
 
     // ── Admin settings endpoints (used by the config page) ───────────────────
@@ -70,7 +72,9 @@ public class WledTvController : ControllerBase
             deviceId           = Config.DeviceId,
             captureMethod      = Config.CaptureMethod,
             debugMode          = Config.DebugMode,
-            batchUpdates       = Config.BatchUpdates
+            batchUpdates       = Config.BatchUpdates,
+            detectLetterbox    = Config.DetectLetterbox,
+            detectPillarbox    = Config.DetectPillarbox
         });
 
     [HttpPost("settings")]
@@ -92,6 +96,8 @@ public class WledTvController : ControllerBase
         cfg.CaptureMethod      = Math.Clamp(s.CaptureMethod, 0, 1);
         cfg.DebugMode          = s.DebugMode;
         cfg.BatchUpdates       = s.BatchUpdates;
+        cfg.DetectLetterbox    = s.DetectLetterbox;
+        cfg.DetectPillarbox    = s.DetectPillarbox;
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
     }
@@ -138,4 +144,6 @@ public class SettingsPayload
     public int    CaptureMethod      { get; set; } = 0;
     public bool   DebugMode          { get; set; } = false;
     public bool   BatchUpdates       { get; set; } = true;
+    public bool   DetectLetterbox    { get; set; } = true;
+    public bool   DetectPillarbox    { get; set; } = true;
 }

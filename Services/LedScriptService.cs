@@ -393,10 +393,14 @@ public class LedScriptService : IHostedService, IDisposable
   function detectContentBounds() {
     var w = _frameWidth, h = _frameHeight;
     if (!_framePixels || w <= 0 || h <= 0) return null;
-    var T = 16; // per-channel threshold
 
-    // Single pass: track bounding box of non-black pixels and count them.
-    // Replaces four separate row/column sweeps and is more cache-friendly.
+    var wantLetter = config && config.detectLetterbox;
+    var wantPillar = config && config.detectPillarbox;
+    if (!wantLetter && !wantPillar) return null; // both toggles off
+
+    var T = 16; // per-channel black threshold
+
+    // Single pass: bounding box of non-black pixels + a count of them.
     var top = h, bottom = -1, left = w, right = -1;
     var nonBlack = 0;
     var total = w * h;
@@ -414,14 +418,36 @@ public class LedScriptService : IHostedService, IDisposable
     }
 
     // Mostly-black frame (credits, fade-to-black, etc.) — the tiny bright region
-    // is isolated text, not actual content edges.  Sampling from the full frame
-    // is better than zooming into a few lines of white text and blasting white LEDs.
+    // is isolated text, not actual content edges.  Sampling the full frame is
+    // better than zooming into a few lines of white text.
     if (nonBlack < total * 0.065) return null;
 
-    // No bars found — full frame
-    if (top === 0 && bottom === h - 1 && left === 0 && right === w - 1) return null;
+    // Raw bar thickness on each side (in downscaled pixels).
+    var topBar    = top;
+    var bottomBar = (h - 1) - bottom;
+    var leftBar   = left;
+    var rightBar  = (w - 1) - right;
 
-    return { top: top, bottom: bottom + 1, left: left, right: right + 1 };
+    // Require symmetry: a genuine bar appears on BOTH opposing sides.  Use the
+    // smaller of the pair so we never crop into content that reaches one edge.
+    // This rejects the "one side is merely dark content" false positive — if
+    // only the left is dark, min(leftBar, rightBar) is ~0 and nothing is cropped.
+    var vBar = wantLetter ? Math.min(topBar,  bottomBar) : 0; // letterbox (top+bottom)
+    var hBar = wantPillar ? Math.min(leftBar, rightBar)  : 0; // pillarbox (left+right)
+
+    // Clamp so the cropped content is no more extreme than 21:9 (letterbox) or
+    // 4:3 (pillarbox).  Black regions beyond that are assumed to be real content
+    // rather than bars, so we stop cropping there.
+    var maxVBar = Math.floor((h - w * 9 / 21) / 2); // 21:9 = widest allowed
+    var maxHBar = Math.floor((w - h * 4 / 3)  / 2); // 4:3  = narrowest allowed
+    if (vBar > maxVBar) vBar = maxVBar;
+    if (hBar > maxHBar) hBar = maxHBar;
+    if (vBar < 0) vBar = 0;
+    if (hBar < 0) hBar = 0;
+
+    if (vBar === 0 && hBar === 0) return null; // nothing to crop
+
+    return { top: vBar, bottom: h - vBar, left: hBar, right: w - hBar };
   }
 
   // ── WebGL video-capture fallback ─────────────────────────────────────────
@@ -643,11 +669,28 @@ public class LedScriptService : IHostedService, IDisposable
 
     var colors = [];
 
+    // Horizontal edges (top/bottom): LED i of n spans the FULL frame width, not
+    // just the content width.  Where the LED's cell overlaps the content it
+    // samples the content edge; where it sits over a left/right (pillarbox) bar
+    // it returns black.  This stops the picture being stretched across the whole
+    // strip — the top/bottom LEDs light up only above/below the actual content.
     function sampleH(i, n, edgeY, edgeH) {
-      return sampleRegion(bx + (vw / n) * i, by + edgeY, vw / n, edgeH);
+      var cellW = _frameWidth / n;
+      var x0 = Math.max(cellW * i,       bx);
+      var x1 = Math.min(cellW * (i + 1), bx + vw);
+      if (x1 <= x0) return [0, 0, 0]; // fully over a pillarbox bar
+      return sampleRegion(x0, by + edgeY, x1 - x0, edgeH);
     }
+    // Vertical edges (left/right): LED i of n spans the FULL frame height.  Over
+    // a top/bottom (letterbox) bar it returns black; otherwise it samples the
+    // content's left/right edge — so the side LEDs light up only alongside the
+    // actual content.
     function sampleV(i, n, edgeX, edgeW) {
-      return sampleRegion(bx + edgeX, by + (vh / n) * i, edgeW, vh / n);
+      var cellH = _frameHeight / n;
+      var y0 = Math.max(cellH * i,       by);
+      var y1 = Math.min(cellH * (i + 1), by + vh);
+      if (y1 <= y0) return [0, 0, 0]; // fully over a letterbox bar
+      return sampleRegion(bx + edgeX, y0, edgeW, y1 - y0);
     }
 
     if (start === 1) {

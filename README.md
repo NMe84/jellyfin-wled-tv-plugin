@@ -5,7 +5,7 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 ## Features
 
 - **Direct WebSocket connection** — the browser talks to WLED directly; Jellyfin's server is not in the data path
-- **Automatic letterbox / pillarbox detection** — black bars are ignored so LEDs react to the actual picture, not the bars. Resampled every 2 seconds, so dynamic aspect-ratio changes (e.g. IMAX sequences) are handled automatically
+- **Letterbox / pillarbox detection** — optional, and toggled independently for horizontal (letterbox) and vertical (pillarbox) bars. Black bars are excluded so the top/bottom and side LEDs light up only where the actual picture is, rather than stretching it across the whole strip. Detection is symmetric (a bar must appear on both opposing sides) and capped at 21:9 for letterboxing and 4:3 for pillarboxing, so genuinely dark content is not mistaken for a bar. Resampled every 2 seconds, so dynamic aspect-ratio changes (e.g. IMAX sequences) are handled automatically
 - **Per-device activation** — restrict edge lighting to one specific Jellyfin client so other devices on the same server are unaffected
 - **Configurable strip layout** — set the start position (bottom centre / left / right), direction (clockwise / counter-clockwise), LED counts per edge, sample depth, brightness, and update rate
 - **Inline connection test** — the Test button in settings opens a real WebSocket from your browser to the URL you typed, before you save
@@ -39,6 +39,8 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Update interval | Milliseconds between colour updates (100 ms = 10 fps) |
 | Capture method | **Canvas 2D** (default) works on most platforms. Switch to **WebGL** on devices where the video decoder renders to a hardware overlay inaccessible to Canvas 2D, such as LG WebOS |
 | Update LEDs in batches | Splits each colour frame into 54-LED batches. **Required for ESP8266** and other controllers with limited memory (disabling causes error 9 on those devices). Turn **off** on ESP32 and other controllers with ample heap to send the whole strip in a single message per frame instead of several |
+| Detect letterboxing | Detects horizontal black bars (top/bottom, up to 21:9) and maps the top/bottom LEDs to the actual content instead of the full screen; the side LEDs light up only alongside the content. Symmetric detection avoids treating one dark side as a bar |
+| Detect pillarboxing | Detects vertical black bars (left/right, down to 4:3) and maps the left/right LEDs to the actual content; the top/bottom LEDs light up only above and below the content. Symmetric detection avoids treating one dark side as a bar |
 | Debug mode | Shows a small on-screen timing overlay (capture time, frame gap, WebSocket state) on the playing device to help diagnose frame-rate problems, and — when connected to [wled-ambilight-mock](https://github.com/NMe84/wled-ambilight-mock) — streams diagnostic frame and state messages back through the WebSocket. Leave off in normal use |
 
 ## Testing without hardware

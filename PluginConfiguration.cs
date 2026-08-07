@@ -56,6 +56,18 @@ public class PluginConfiguration : BasePluginConfiguration
     /// (and other devices with ample heap) to send all LEDs in a single message.
     /// </summary>
     public bool BatchUpdates { get; set; } = true;
+
+    /// <summary>
+    /// When true, detect horizontal black bars (letterboxing) and map the top and
+    /// bottom LEDs to the actual content instead of the full screen.
+    /// </summary>
+    public bool DetectLetterbox { get; set; } = true;
+
+    /// <summary>
+    /// When true, detect vertical black bars (pillarboxing) and map the left and
+    /// right LEDs to the actual content instead of the full screen.
+    /// </summary>
+    public bool DetectPillarbox { get; set; } = true;
 }
 
 public enum LedLoopStart

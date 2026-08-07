@@ -156,6 +156,32 @@
                     in a single message, reducing messages per frame from 5 to 1 on a 65 inch TV.
                 </div>
 
+                <!-- Letterbox detection -->
+                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:.5em;">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="chkDetectLetterbox" is="emby-checkbox" class="emby-checkbox">
+                        <span>Detect letterboxing (horizontal bars)</span>
+                    </label>
+                </div>
+                <div class="fieldDescription" style="margin-bottom:1.5em;">
+                    Detects black bars at the top and bottom of the picture (up to 21:9) and maps the
+                    top and bottom LEDs to where the actual content is, instead of stretching it across
+                    the full screen. The side LEDs light up only alongside the content.
+                </div>
+
+                <!-- Pillarbox detection -->
+                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:.5em;">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="chkDetectPillarbox" is="emby-checkbox" class="emby-checkbox">
+                        <span>Detect pillarboxing (vertical bars)</span>
+                    </label>
+                </div>
+                <div class="fieldDescription" style="margin-bottom:1.5em;">
+                    Detects black bars on the left and right of the picture (down to 4:3) and maps the
+                    left and right LEDs to where the actual content is. The top and bottom LEDs light up
+                    only above and below the content.
+                </div>
+
                 <!-- Debug mode -->
                 <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:1.5em;">
                     <label class="emby-checkbox-label">
@@ -228,6 +254,8 @@
         var selDevice       = document.getElementById('selDeviceId');
         var selCapture      = document.getElementById('selCaptureMethod');
         var chkBatchUpdates = document.getElementById('chkBatchUpdates');
+        var chkDetectLetterbox = document.getElementById('chkDetectLetterbox');
+        var chkDetectPillarbox = document.getElementById('chkDetectPillarbox');
         var chkDebugMode    = document.getElementById('chkDebugMode');
         var txtUrl    = document.getElementById('txtWledWsUrl');
         var btnTest   = document.getElementById('btnTest');
@@ -279,6 +307,8 @@
             lblBri.textContent          = rngBri.value;
             selCapture.value            = String(cfg.captureMethod || 0);
             chkBatchUpdates.checked     = cfg.batchUpdates !== false;
+            chkDetectLetterbox.checked  = cfg.detectLetterbox !== false;
+            chkDetectPillarbox.checked  = cfg.detectPillarbox !== false;
             chkDebugMode.checked        = cfg.debugMode === true;
             updateSummary();
 
@@ -368,6 +398,8 @@
                     deviceId:           selDevice.value,
                     captureMethod:      parseInt(selCapture.value),
                     batchUpdates:       chkBatchUpdates.checked,
+                    detectLetterbox:    chkDetectLetterbox.checked,
+                    detectPillarbox:    chkDetectPillarbox.checked,
                     debugMode:          chkDebugMode.checked
                 })
             })
