@@ -654,12 +654,17 @@ public class LedScriptService : IHostedService, IDisposable
   //   BottomRight : right B→T → top R→L → left T→B → full bottom L→R
   // For counter-clockwise strips the array is reversed (CCW = CW backwards).
   function computeLedColors() {
-    // Honour detected content bounds so bars are excluded from sampling.
-    var b  = contentBounds;
-    var bx = b ? b.left              : 0;
-    var by = b ? b.top               : 0;
-    var vw = b ? (b.right  - b.left) : _frameWidth;
-    var vh = b ? (b.bottom - b.top)  : _frameHeight;
+    var W = _frameWidth, Hp = _frameHeight; // captured frame = the RAW video
+
+    // Bars baked into the video FILE (pixel scan).  These live inside the frame.
+    var b       = contentBounds;
+    var cLeft   = b ? b.left   : 0;
+    var cRight  = b ? b.right  : W;
+    var cTop    = b ? b.top    : 0;
+    var cBottom = b ? b.bottom : Hp;
+    var vw = cRight - cLeft;
+    var vh = cBottom - cTop;
+
     var h     = config.horizontalLedCount;
     var v     = config.verticalLedCount;
     var d     = config.sampleDepth;
@@ -667,30 +672,55 @@ public class LedScriptService : IHostedService, IDisposable
     var dh    = Math.max(1, Math.round(vh * d));
     var start = config.loopStart; // 0=BottomCenter, 1=BottomLeft, 2=BottomRight
 
+    // Display placement.  The capture (texImage2D/drawImage of the <video>) is
+    // the raw decoded frame at the video's own resolution, so the black bars a
+    // 4:3 video shows on a 16:9 panel are NOT in the pixels — the compositor adds
+    // them on screen.  They are therefore geometric: derive the video's on-screen
+    // rectangle (as fractions of the panel) from the video vs panel aspect ratio.
+    // The LEDs are arranged around the panel, so this tells us which LEDs sit over
+    // a bar (→ dark) and which sit beside actual picture.
+    var screenAR = (window.innerWidth && window.innerHeight)
+        ? (window.innerWidth / window.innerHeight)
+        : (h / v); // fall back to the LED-layout aspect
+    var videoAR = Hp > 0 ? (W / Hp) : screenAR;
+    var dispL = 0, dispR = 1, dispT = 0, dispB = 1; // video's panel rect, fractions
+    if (videoAR > screenAR) {
+      // Wider than the panel → letterboxed (bars top & bottom).
+      if (config.detectLetterbox) { var vf = screenAR / videoAR; dispT = (1 - vf) / 2; dispB = 1 - dispT; }
+    } else if (videoAR < screenAR) {
+      // Narrower than the panel → pillarboxed (bars left & right).
+      if (config.detectPillarbox) { var hf = videoAR / screenAR; dispL = (1 - hf) / 2; dispR = 1 - dispL; }
+    }
+
+    // Compose the baked-content rectangle through the display placement to get
+    // the content's extent as fractions of the PANEL (which is what the LEDs span).
+    var clS = dispL + (cLeft   / W)  * (dispR - dispL);
+    var crS = dispL + (cRight  / W)  * (dispR - dispL);
+    var ctS = dispT + (cTop    / Hp) * (dispB - dispT);
+    var cbS = dispT + (cBottom / Hp) * (dispB - dispT);
+    var spanH = crS - clS;
+    var spanV = cbS - ctS;
+
     var colors = [];
 
-    // Horizontal edges (top/bottom): LED i of n spans the FULL frame width, not
-    // just the content width.  Where the LED's cell overlaps the content it
-    // samples the content edge; where it sits over a left/right (pillarbox) bar
-    // it returns black.  This stops the picture being stretched across the whole
-    // strip — the top/bottom LEDs light up only above/below the actual content.
+    // Horizontal edges (top/bottom).  (i+0.5)/n is the LED's position across the
+    // full panel width.  If it falls over a left/right bar the LED is dark;
+    // otherwise it maps into the content and samples its top/bottom edge.
     function sampleH(i, n, edgeY, edgeH) {
-      var cellW = _frameWidth / n;
-      var x0 = Math.max(cellW * i,       bx);
-      var x1 = Math.min(cellW * (i + 1), bx + vw);
-      if (x1 <= x0) return [0, 0, 0]; // fully over a pillarbox bar
-      return sampleRegion(x0, by + edgeY, x1 - x0, edgeH);
+      var sx = (i + 0.5) / n;
+      if (spanH <= 0 || sx < clS || sx > crS) return [0, 0, 0];
+      var cx    = cLeft + ((sx - clS) / spanH) * vw;
+      var cellW = vw / (n * spanH);
+      return sampleRegion(cx - cellW / 2, cTop + edgeY, cellW, edgeH);
     }
-    // Vertical edges (left/right): LED i of n spans the FULL frame height.  Over
-    // a top/bottom (letterbox) bar it returns black; otherwise it samples the
-    // content's left/right edge — so the side LEDs light up only alongside the
-    // actual content.
+    // Vertical edges (left/right).  If the LED falls over a top/bottom bar it is
+    // dark; otherwise it maps into the content and samples its left/right edge.
     function sampleV(i, n, edgeX, edgeW) {
-      var cellH = _frameHeight / n;
-      var y0 = Math.max(cellH * i,       by);
-      var y1 = Math.min(cellH * (i + 1), by + vh);
-      if (y1 <= y0) return [0, 0, 0]; // fully over a letterbox bar
-      return sampleRegion(bx + edgeX, y0, edgeW, y1 - y0);
+      var sy = (i + 0.5) / n;
+      if (spanV <= 0 || sy < ctS || sy > cbS) return [0, 0, 0];
+      var cy    = cTop + ((sy - ctS) / spanV) * vh;
+      var cellH = vh / (n * spanV);
+      return sampleRegion(cLeft + edgeX, cy - cellH / 2, edgeW, cellH);
     }
 
     if (start === 1) {
