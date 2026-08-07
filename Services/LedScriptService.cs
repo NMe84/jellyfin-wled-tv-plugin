@@ -390,13 +390,15 @@ public class LedScriptService : IHostedService, IDisposable
   // Coordinates are in the capture frame's own pixel space.
   // Called every 2 s so dynamic aspect-ratio changes are picked up quickly.
 
+  // Detects bars BAKED INTO the video file (they are actually present in the
+  // captured pixels).  Bars that only appear on screen because the video's aspect
+  // ratio differs from the panel are handled separately in computeLedColors from
+  // the aspect ratios, since they are never in the pixels.  Detection runs
+  // regardless of the toggles; the toggles only decide, at sampling time, whether
+  // the strips lying over a bar light up or stay dark.
   function detectContentBounds() {
     var w = _frameWidth, h = _frameHeight;
     if (!_framePixels || w <= 0 || h <= 0) return null;
-
-    var wantLetter = config && config.detectLetterbox;
-    var wantPillar = config && config.detectPillarbox;
-    if (!wantLetter && !wantPillar) return null; // both toggles off
 
     var T = 16; // per-channel black threshold
 
@@ -432,8 +434,8 @@ public class LedScriptService : IHostedService, IDisposable
     // smaller of the pair so we never crop into content that reaches one edge.
     // This rejects the 'one side is merely dark content' false positive — if
     // only the left is dark, min(leftBar, rightBar) is ~0 and nothing is cropped.
-    var vBar = wantLetter ? Math.min(topBar,  bottomBar) : 0; // letterbox (top+bottom)
-    var hBar = wantPillar ? Math.min(leftBar, rightBar)  : 0; // pillarbox (left+right)
+    var vBar = Math.min(topBar,  bottomBar); // letterbox (top+bottom)
+    var hBar = Math.min(leftBar, rightBar);  // pillarbox (left+right)
 
     // Clamp so the cropped content is no more extreme than 21:9 (letterbox) or
     // 4:3 (pillarbox).  Black regions beyond that are assumed to be real content
@@ -684,12 +686,12 @@ public class LedScriptService : IHostedService, IDisposable
         : (h / v); // fall back to the LED-layout aspect
     var videoAR = Hp > 0 ? (W / Hp) : screenAR;
     var dispL = 0, dispR = 1, dispT = 0, dispB = 1; // video's panel rect, fractions
+    // Always geometric — the bars exist on the panel whether or not we choose to
+    // light the strips over them.  The toggles are applied later, per strip.
     if (videoAR > screenAR) {
-      // Wider than the panel → letterboxed (bars top & bottom).
-      if (config.detectLetterbox) { var vf = screenAR / videoAR; dispT = (1 - vf) / 2; dispB = 1 - dispT; }
+      var vf = screenAR / videoAR; dispT = (1 - vf) / 2; dispB = 1 - dispT; // letterbox
     } else if (videoAR < screenAR) {
-      // Narrower than the panel → pillarboxed (bars left & right).
-      if (config.detectPillarbox) { var hf = videoAR / screenAR; dispL = (1 - hf) / 2; dispR = 1 - dispL; }
+      var hf = videoAR / screenAR; dispL = (1 - hf) / 2; dispR = 1 - dispL; // pillarbox
     }
 
     // Compose the baked-content rectangle through the display placement to get
@@ -701,49 +703,61 @@ public class LedScriptService : IHostedService, IDisposable
     var spanH = crS - clS;
     var spanV = cbS - ctS;
 
+    var EPS = 0.002; // aspect-ratio noise guard (ignore sub-pixel bars)
     var colors = [];
 
     // Horizontal edges (top/bottom).  (i+0.5)/n is the LED's position across the
-    // full panel width.  If it falls over a left/right bar the LED is dark;
-    // otherwise it maps into the content and samples its top/bottom edge.
-    function sampleH(i, n, edgeY, edgeH) {
+    // full panel width.
+    //   • Beyond the content horizontally (an end sitting over a left/right bar)
+    //     → always dark.
+    //   • Over a top/bottom (letterbox) bar → dark unless letterbox handling is
+    //     on, in which case it is remapped to the video's top/bottom edge.
+    //   • Otherwise samples the content's top/bottom edge.
+    function sampleH(i, n, isTop) {
       var sx = (i + 0.5) / n;
-      if (spanH <= 0 || sx < clS || sx > crS) return [0, 0, 0];
+      if (spanH <= 0 || sx < clS || sx > crS) return [0, 0, 0]; // end over side bar
+      var overBar = isTop ? (ctS > EPS) : (cbS < 1 - EPS);
+      if (overBar && !config.detectLetterbox) return [0, 0, 0];
       var cx    = cLeft + ((sx - clS) / spanH) * vw;
       var cellW = vw / (n * spanH);
-      return sampleRegion(cx - cellW / 2, cTop + edgeY, cellW, edgeH);
+      var y     = isTop ? cTop : (cBottom - dh);
+      return sampleRegion(cx - cellW / 2, y, cellW, dh);
     }
-    // Vertical edges (left/right).  If the LED falls over a top/bottom bar it is
-    // dark; otherwise it maps into the content and samples its left/right edge.
-    function sampleV(i, n, edgeX, edgeW) {
+    // Vertical edges (left/right), mirror of the above.  Over a left/right
+    // (pillarbox) bar → dark unless pillarbox handling is on; ends over a
+    // top/bottom bar are always dark.
+    function sampleV(i, n, isLeft) {
       var sy = (i + 0.5) / n;
-      if (spanV <= 0 || sy < ctS || sy > cbS) return [0, 0, 0];
+      if (spanV <= 0 || sy < ctS || sy > cbS) return [0, 0, 0]; // end over top/bottom bar
+      var overBar = isLeft ? (clS > EPS) : (crS < 1 - EPS);
+      if (overBar && !config.detectPillarbox) return [0, 0, 0];
       var cy    = cTop + ((sy - ctS) / spanV) * vh;
       var cellH = vh / (n * spanV);
-      return sampleRegion(cLeft + edgeX, cy - cellH / 2, edgeW, cellH);
+      var x     = isLeft ? cLeft : (cRight - dw);
+      return sampleRegion(x, cy - cellH / 2, dw, cellH);
     }
 
     if (start === 1) {
       // BottomLeft
-      for (var i = 0; i < h; i++) colors.push(sampleH(i, h, vh - dh, dh));
-      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
-      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
-      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
+      for (var i = 0; i < h; i++) colors.push(sampleH(i, h, false));
+      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, false));
+      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, true));
+      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, true));
     } else if (start === 2) {
       // BottomRight
-      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
-      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
-      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
-      for (var i = 0; i < h; i++) colors.push(sampleH(i, h, vh - dh, dh));
+      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, false));
+      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, true));
+      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, true));
+      for (var i = 0; i < h; i++) colors.push(sampleH(i, h, false));
     } else {
       // BottomCenter (default)
       var hRight = Math.ceil(h / 2);
       var hLeft  = Math.floor(h / 2);
-      for (var i = 0; i < hRight; i++) colors.push(sampleH(hLeft + i, h, vh - dh, dh));
-      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, vw - dw, dw));
-      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, 0, dh));
-      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, 0, dw));
-      for (var i = 0; i < hLeft; i++) colors.push(sampleH(i, h, vh - dh, dh));
+      for (var i = 0; i < hRight; i++) colors.push(sampleH(hLeft + i, h, false));
+      for (var i = 0; i < v; i++) colors.push(sampleV(v - 1 - i, v, false));
+      for (var i = h - 1; i >= 0; i--) colors.push(sampleH(i, h, true));
+      for (var i = 0; i < v; i++) colors.push(sampleV(i, v, true));
+      for (var i = 0; i < hLeft; i++) colors.push(sampleH(i, h, false));
     }
 
     return colors;
