@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.4.1.0\n\n### Fixed\n- **Letterbox/pillarbox LEDs now follow the on-screen picture, not the raw video frame** — the capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are not in the captured pixels; the compositor adds them on screen. The plugin was mapping LEDs across the raw frame edges, which stretched a 4:3 picture across the whole strip and lit the top/bottom LEDs over the side bars (this occurred regardless of the detection toggles).\n\n  LEDs are now mapped to the video's actual on-screen rectangle, computed from the video-vs-panel aspect ratio. For a 4:3 video on a 16:9 TV the full left/right strips light up (mapped to the sides of the video) while only the middle of the top/bottom strips light up — the LEDs over the black bars stay dark. Letterboxed content behaves as the mirror image. Bars baked into the video file are still handled and composed through the same placement.\n\nThe WebGL sampler (capture path) is unchanged.",
+        "checksum": "466d5ad69edcc34e488496bf597db944",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-07T12:30:52Z",
+        "version": "1.4.1.0"
+      },
+      {
         "changelog": "## v1.4.0.0\n\nReworks letterbox/pillarbox detection to be more accurate and fully optional.\n\n### Changed\n- **Symmetric detection** — a bar is only detected when it appears on *both* opposing sides (using the smaller of the two). This fixes the case where one merely-dark side of the picture was wrongly detected as a boundary.\n- **Aspect-ratio clamp** — letterboxing is capped at **21:9** and pillarboxing at **4:3**. Darker regions beyond that are treated as genuine content, not bars.\n- **Content-aligned LEDs** — LEDs now map to where the picture actually is instead of stretching it across the whole strip. With pillarboxing the top/bottom LEDs light up only above/below the centred content; with letterboxing the side LEDs light up only alongside the content. The bar regions stay dark.\n\n### Added\n- **Detect letterboxing** and **Detect pillarboxing** settings — each toggles its dimension independently (both on by default).",
         "checksum": "7ece9186fec308ac0ca535eeb11e23fb",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.0.0/Jellyfin.Plugin.WledTv.zip",
