@@ -430,7 +430,7 @@ public class LedScriptService : IHostedService, IDisposable
 
     // Require symmetry: a genuine bar appears on BOTH opposing sides.  Use the
     // smaller of the pair so we never crop into content that reaches one edge.
-    // This rejects the "one side is merely dark content" false positive — if
+    // This rejects the 'one side is merely dark content' false positive — if
     // only the left is dark, min(leftBar, rightBar) is ~0 and nothing is cropped.
     var vBar = wantLetter ? Math.min(topBar,  bottomBar) : 0; // letterbox (top+bottom)
     var hBar = wantPillar ? Math.min(leftBar, rightBar)  : 0; // pillarbox (left+right)
