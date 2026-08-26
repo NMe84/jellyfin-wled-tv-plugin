@@ -93,7 +93,7 @@ public class WledTvController : ControllerBase
         cfg.UpdateIntervalMs   = Math.Max(40, s.UpdateIntervalMs);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
         cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
-        cfg.CaptureMethod      = Math.Clamp(s.CaptureMethod, 0, 1);
+        cfg.CaptureMethod      = Math.Clamp(s.CaptureMethod, 0, 2);
         cfg.DebugMode          = s.DebugMode;
         cfg.BatchUpdates       = s.BatchUpdates;
         cfg.DetectLetterbox    = s.DetectLetterbox;

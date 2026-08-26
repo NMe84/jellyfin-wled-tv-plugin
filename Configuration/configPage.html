@@ -133,12 +133,16 @@
                             style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
                         <option value="0">Canvas 2D (default)</option>
                         <option value="1">WebGL (hardware overlay platforms)</option>
+                        <option value="2">Media Stream (WebOS 26+)</option>
                     </select>
                     <div class="fieldDescription">
                         Use <strong>Canvas 2D</strong> on all normal devices (desktop browsers, phones).
                         Switch to <strong>WebGL</strong> only if the LEDs do not turn on during playback
                         — this happens on platforms such as WebOS where the video decoder renders into a
                         hardware overlay layer that Canvas 2D cannot read.
+                        Use <strong>Media Stream</strong> if even WebGL stays dark (e.g. WebOS 26): it reads
+                        decoded frames directly from the media track, bypassing the on-screen surface. Only
+                        works with non-DRM content.
                     </div>
                 </div>
 

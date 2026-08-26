@@ -163,6 +163,16 @@ public class LedScriptService : IHostedService, IDisposable
   var _wglCtx    = null;   // WebGL context
   var _wglReady  = false;  // true once WebGL setup succeeded
 
+  // Media-stream capture (used when config.captureMethod === 2)
+  // Reads decoded frames straight from the track via MediaStreamTrackProcessor,
+  // bypassing the compositor entirely — the only path that still works on WebOS
+  // 26, where the overlay surface is not readable by Canvas 2D or WebGL.
+  var _msStream   = null;  // MediaStream from video.captureStream()
+  var _msReader   = null;  // reader over the track processor's readable stream
+  var _msActive   = false; // true while the frame pump is running
+  var _msVideo    = null;  // the video element the pump is bound to
+  var _msLastProc = 0;     // last time a frame was drawn into _framePixels
+
   var _frame     = 0;      // frame counter, used to rotate batch send order
 
   // Aspect-ratio enforcement (WebOS WebGL path only)
@@ -558,11 +568,91 @@ public class LedScriptService : IHostedService, IDisposable
     } catch (e) { return false; }
   }
 
+  // ── Media-stream capture (captureMethod === 2) ────────────────────────────
+  //
+  // captureStream() taps the track's decoded output and MediaStreamTrackProcessor
+  // hands us each frame as a VideoFrame we own and can draw to a canvas — even
+  // when the on-screen surface is a protected overlay the compositor cannot read
+  // (WebOS 26).  Frames arrive at the video's native rate; we downscale+read at
+  // most one per update interval and close the rest immediately so no decoder
+  // buffers leak.  Requires captureStream() + MediaStreamTrackProcessor (both in
+  // recent Chromium) and non-DRM content (captureStream throws on DRM).
+
+  function _startFrameProcessor(video) {
+    if (_msActive && _msVideo === video) return true; // already pumping this video
+    _stopFrameProcessor();
+    if (typeof MediaStreamTrackProcessor === 'undefined' || !video.captureStream) {
+      return false;
+    }
+    try {
+      _msStream = video.captureStream();
+      var tracks = _msStream.getVideoTracks();
+      if (!tracks.length) { _stopFrameProcessor(); return false; }
+      var processor = new MediaStreamTrackProcessor({ track: tracks[0] });
+      _msReader = processor.readable.getReader();
+      _msActive = true;
+      _msVideo  = video;
+      _pumpFrames();
+      return true;
+    } catch (e) {
+      _stopFrameProcessor();
+      return false;
+    }
+  }
+
+  function _pumpFrames() {
+    if (!_msActive || !_msReader) return;
+    _msReader.read().then(function (res) {
+      if (res.done) { _msActive = false; return; }
+      var frame = res.value;
+      try {
+        var now = Date.now();
+        var interval = (config && config.updateIntervalMs) || 100;
+        // Only do the heavy draw+read at the sample rate; drop-close the rest.
+        if (now - _msLastProc >= interval) {
+          _msLastProc = now;
+          var vw = frame.displayWidth  || frame.codedWidth;
+          var vh = frame.displayHeight || frame.codedHeight;
+          var tw = Math.max(1, vw >> 2);
+          var th = Math.max(1, vh >> 2);
+          ensureCanvas();
+          canvas.width  = tw;
+          canvas.height = th;
+          ctx.drawImage(frame, 0, 0, tw, th);
+          _framePixels = ctx.getImageData(0, 0, tw, th).data;
+          _frameWidth  = tw;
+          _frameHeight = th;
+        }
+      } catch (e) { /* protected/unshaped frame — skip it */ }
+      try { frame.close(); } catch (e) {} // release the decoder buffer
+      if (_msActive) _pumpFrames();
+    }).catch(function () { _msActive = false; });
+  }
+
+  function _stopFrameProcessor() {
+    _msActive = false;
+    if (_msReader) { try { _msReader.cancel(); } catch (e) {} _msReader = null; }
+    if (_msStream) {
+      try { _msStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+      _msStream = null;
+    }
+    _msVideo = null;
+  }
+
   // Captures the current video frame at 1/4 scale into _framePixels.
   // Canvas 2D path: draws downscaled then reads the whole canvas once.
-  // WebGL path: renders to GL canvas and reads back via gl.readPixels —
-  //   no 2D canvas involved, no cross-context pipeline flush.
+  // WebGL path: renders to GL canvas and reads back via gl.readPixels.
+  // Media-stream path: frames are delivered asynchronously by the pump above.
   function captureFrame(video) {
+    if (config && config.captureMethod === 2) {
+      // Frames arrive asynchronously and keep _framePixels fresh; just make sure
+      // the pump is running for this video, then keep the display box correct.
+      _startFrameProcessor(video);
+      enforceAspect(video);
+      return;
+    }
+    if (_msActive) _stopFrameProcessor(); // method switched away from media-stream
+
     var tw = Math.max(1, video.videoWidth  >> 2); // 1/4 scale
     var th = Math.max(1, video.videoHeight >> 2);
     _frameWidth  = tw;
@@ -956,8 +1046,9 @@ public class LedScriptService : IHostedService, IDisposable
     running = false;
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
     console.log('[wledtv] stop (off=' + !!turnOff + ')');
-    restoreVideoStyle(); // undo any aspect-ratio box sizing we applied
-    hideDiag();          // remove the diagnostics overlay
+    restoreVideoStyle();   // undo any aspect-ratio box sizing we applied
+    _stopFrameProcessor(); // tear down the media-stream pump, if running
+    hideDiag();            // remove the diagnostics overlay
     if (turnOff && ledsOn) { sendOff(); ledsOn = false; }
     if (turnOff) closeWs();
   }

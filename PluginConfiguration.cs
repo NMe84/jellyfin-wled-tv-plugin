@@ -40,6 +40,8 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// How the plugin captures video frames from the browser.
     /// 0 = Canvas 2D (default). 1 = WebGL (for hardware-overlay platforms like WebOS).
+    /// 2 = Media Stream (MediaStreamTrackProcessor; reads decoded frames directly,
+    /// for platforms like WebOS 26 where even WebGL cannot read the overlay surface).
     /// </summary>
     public int CaptureMethod { get; set; } = 0;
 
