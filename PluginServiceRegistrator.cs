@@ -9,9 +9,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddHostedService<LedScriptService>();
-        // No AddHttpClient — colour stream now goes browser→WLED directly via WebSocket.
-        // The server only needs a plain HttpClient for the WebSocket connectivity test.
-        serviceCollection.AddHttpClient();
+        // Server-side edge lighting: decodes the selected device's playback with
+        // the bundled ffmpeg, samples the edges, and streams colours to WLED.
+        serviceCollection.AddHostedService<WledSamplingService>();
     }
 }

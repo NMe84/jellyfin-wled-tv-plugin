@@ -33,8 +33,9 @@
                         <option value="">Any device</option>
                     </select>
                     <div class="fieldDescription">
-                        Restrict edge lighting to one specific Jellyfin client. Useful when multiple devices share this
-                        server but only one TV has an LED strip attached. Select "Any device" to run everywhere.
+                        The server samples the video for this device only, so the extra decode is not incurred
+                        for anyone else on the server. Pick the client attached to your LED strip. "Any device"
+                        samples whichever session is playing (and will decode for every device that plays).
                     </div>
                 </div>
 
@@ -49,8 +50,8 @@
                                 style="white-space:nowrap;flex-shrink:0;">Test</button>
                     </div>
                     <div class="fieldDescription">
-                        Full WebSocket address of your WLED device. The browser connects directly — no server proxy.
-                        The Test button checks the URL currently shown in the field above.
+                        Full WebSocket address of your WLED device. The Jellyfin server connects to it directly.
+                        The Test button opens a connection from the server to the URL currently in the field.
                     </div>
                 </div>
                 <div id="wledTestResult" style="margin-top:4px;margin-bottom:8px;font-size:.85em;display:none;"></div>
@@ -94,16 +95,6 @@
                     </div>
                 </div>
 
-                <!-- Sample depth -->
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="numSampleDepth">
-                        Sample depth (<span id="lblSampleDepth">8</span>%)
-                    </label>
-                    <input type="range" id="numSampleDepth" min="2" max="25" step="1"
-                           style="width:100%;">
-                    <div class="fieldDescription">How far from each screen edge to sample (percentage of frame dimension).</div>
-                </div>
-
                 <!-- Brightness -->
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="numBrightness">
@@ -113,38 +104,10 @@
                            style="width:100%;">
                 </div>
 
-                <!-- Update rate -->
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="numIntervalMs">Update interval (ms)</label>
-                    <input type="number" id="numIntervalMs" is="emby-input" class="emby-input"
-                           min="40" max="1000" step="10" value="100">
-                    <div class="fieldDescription">Time between colour updates. 100 ms = 10 fps. Minimum ~40 ms (25 fps).</div>
-                </div>
-
                 <!-- LED count summary -->
                 <p style="margin:.5em 0 1.5em;font-size:.85em;color:#888;">
                     Total LEDs: <strong id="lblTotal">0</strong>
                 </p>
-
-                <!-- Video capture method -->
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="selCaptureMethod">Video capture method</label>
-                    <select id="selCaptureMethod" is="emby-select" class="emby-select"
-                            style="background:#202020;color:#dddddd;border:1px solid rgba(255,255,255,.12);width:100%;">
-                        <option value="0">Canvas 2D (default)</option>
-                        <option value="1">WebGL (hardware overlay platforms)</option>
-                        <option value="2">Media Stream (WebOS 26+)</option>
-                    </select>
-                    <div class="fieldDescription">
-                        Use <strong>Canvas 2D</strong> on all normal devices (desktop browsers, phones).
-                        Switch to <strong>WebGL</strong> only if the LEDs do not turn on during playback
-                        — this happens on platforms such as WebOS where the video decoder renders into a
-                        hardware overlay layer that Canvas 2D cannot read.
-                        Use <strong>Media Stream</strong> if even WebGL stays dark (e.g. WebOS 26): it reads
-                        decoded frames directly from the media track, bypassing the on-screen surface. Only
-                        works with non-DRM content.
-                    </div>
-                </div>
 
                 <!-- Batch updates -->
                 <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:.5em;">
@@ -157,7 +120,7 @@
                     Splits each colour frame into batches of 54 LEDs. Required for ESP8266 and other
                     controllers with limited memory (disabling causes error 9 on those devices).
                     Safe to turn off on ESP32 and other controllers with ample heap — sends all LEDs
-                    in a single message, reducing messages per frame from 5 to 1 on a 65 inch TV.
+                    in a single message per frame.
                 </div>
 
                 <!-- Letterbox detection -->
@@ -168,9 +131,9 @@
                     </label>
                 </div>
                 <div class="fieldDescription" style="margin-bottom:1.5em;">
-                    Detects black bars at the top and bottom of the picture (up to 21:9) and maps the
-                    top and bottom LEDs to where the actual content is, instead of stretching it across
-                    the full screen. The side LEDs light up only alongside the content.
+                    Detects black bars at the top and bottom of the picture (up to 21:9). The top and bottom
+                    LEDs map to the video's top/bottom edge; the LEDs over the bars stay dark. Turn off to
+                    leave the top and bottom strips dark whenever the picture is letterboxed.
                 </div>
 
                 <!-- Pillarbox detection -->
@@ -181,23 +144,9 @@
                     </label>
                 </div>
                 <div class="fieldDescription" style="margin-bottom:1.5em;">
-                    Detects black bars on the left and right of the picture (down to 4:3) and maps the
-                    left and right LEDs to where the actual content is. The top and bottom LEDs light up
-                    only above and below the content.
-                </div>
-
-                <!-- Debug mode -->
-                <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom:1.5em;">
-                    <label class="emby-checkbox-label">
-                        <input type="checkbox" id="chkDebugMode" is="emby-checkbox" class="emby-checkbox">
-                        <span>Debug mode</span>
-                    </label>
-                </div>
-                <div class="fieldDescription" style="margin-bottom:1.5em;">
-                    Shows a small timing overlay (capture time, frame gap, WebSocket state) on the playing
-                    device to help diagnose frame-rate issues, and — when connected to
-                    <a href="https://github.com/NMe84/wled-ambilight-mock" target="_blank">wled-ambilight-mock</a> —
-                    streams diagnostic messages back through the WebSocket. Leave off in normal use.
+                    Detects black bars on the left and right of the picture (down to 4:3). The left and right
+                    LEDs map to the video's side edges; the LEDs over the bars stay dark. Turn off to leave
+                    the side strips dark whenever the picture is pillarboxed.
                 </div>
 
                 <!-- Save -->
@@ -256,11 +205,9 @@
         var form      = document.getElementById('wledConfigForm');
         var chkEn           = document.getElementById('chkEnabled');
         var selDevice       = document.getElementById('selDeviceId');
-        var selCapture      = document.getElementById('selCaptureMethod');
         var chkBatchUpdates = document.getElementById('chkBatchUpdates');
         var chkDetectLetterbox = document.getElementById('chkDetectLetterbox');
         var chkDetectPillarbox = document.getElementById('chkDetectPillarbox');
-        var chkDebugMode    = document.getElementById('chkDebugMode');
         var txtUrl    = document.getElementById('txtWledWsUrl');
         var btnTest   = document.getElementById('btnTest');
         var testOut   = document.getElementById('wledTestResult');
@@ -268,10 +215,7 @@
         var numV      = document.getElementById('numVLeds');
         var selStart  = document.getElementById('selLoopStart');
         var selDir    = document.getElementById('selDirection');
-        var rngDepth  = document.getElementById('numSampleDepth');
         var rngBri    = document.getElementById('numBrightness');
-        var numMs     = document.getElementById('numIntervalMs');
-        var lblDepth  = document.getElementById('lblSampleDepth');
         var lblBri    = document.getElementById('lblBrightness');
         var lblTotal  = document.getElementById('lblTotal');
 
@@ -290,8 +234,7 @@
         }
 
         // ── Live label bindings ───────────────────────────────────────────────
-        rngDepth.addEventListener('input', function () { lblDepth.textContent = rngDepth.value; });
-        rngBri.addEventListener('input',   function () { lblBri.textContent   = rngBri.value; });
+        rngBri.addEventListener('input', function () { lblBri.textContent = rngBri.value; });
         numH.addEventListener('input', updateSummary);
         numV.addEventListener('input', updateSummary);
 
@@ -304,16 +247,11 @@
             numV.value           = cfg.verticalLedCount    || 18;
             selStart.value       = String(cfg.loopStart    || 0);
             selDir.value         = String(cfg.direction    !== undefined ? cfg.direction : 1);
-            rngDepth.value       = Math.round((cfg.sampleDepth || 0.08) * 100);
             rngBri.value         = cfg.brightness          || 128;
-            numMs.value          = cfg.updateIntervalMs    || 100;
-            lblDepth.textContent        = rngDepth.value;
             lblBri.textContent          = rngBri.value;
-            selCapture.value            = String(cfg.captureMethod || 0);
             chkBatchUpdates.checked     = cfg.batchUpdates !== false;
             chkDetectLetterbox.checked  = cfg.detectLetterbox !== false;
             chkDetectPillarbox.checked  = cfg.detectPillarbox !== false;
-            chkDebugMode.checked        = cfg.debugMode === true;
             updateSummary();
 
             var savedDeviceId = cfg.deviceId || '';
@@ -396,24 +334,20 @@
                     verticalLedCount:   parseInt(numV.value),
                     loopStart:          parseInt(selStart.value),
                     direction:          parseInt(selDir.value),
-                    sampleDepth:        parseInt(rngDepth.value) / 100,
                     brightness:         parseInt(rngBri.value),
-                    updateIntervalMs:   parseInt(numMs.value),
                     deviceId:           selDevice.value,
-                    captureMethod:      parseInt(selCapture.value),
                     batchUpdates:       chkBatchUpdates.checked,
                     detectLetterbox:    chkDetectLetterbox.checked,
-                    detectPillarbox:    chkDetectPillarbox.checked,
-                    debugMode:          chkDebugMode.checked
+                    detectPillarbox:    chkDetectPillarbox.checked
                 })
             })
             .then(function () { showBanner('Configuration saved.', true); })
             .catch(function (err) { showBanner('Save failed: ' + err.message, false); });
         });
 
-        // ── Test connection (client-side WebSocket) ───────────────────────────
-        // Tests the URL currently in the input field, not whatever was last saved.
-        // This is a direct browser → WLED connection, matching actual runtime behaviour.
+        // ── Test connection (server-side WebSocket) ───────────────────────────
+        // Asks the Jellyfin server to open a WebSocket to the URL in the field —
+        // this is the same path used at runtime (server → WLED).
         btnTest.addEventListener('click', function () {
             var url = txtUrl.value.trim();
             if (!url) {
@@ -423,35 +357,22 @@
                 return;
             }
 
-            testOut.textContent   = 'Connecting to ' + url + '…';
+            testOut.textContent   = 'Testing ' + url + ' from the server…';
             testOut.style.color   = '#888';
             testOut.style.display = 'block';
             btnTest.disabled      = true;
 
-            var done = false;
-            var ws;
-
-            function finish(ok, msg) {
-                if (done) return;
-                done             = true;
-                btnTest.disabled = false;
-                clearTimeout(timer);
-                testOut.style.color = ok ? '#27ae60' : '#f44336';
-                testOut.textContent = msg;
-                if (ws && ws.readyState <= 1) { try { ws.close(); } catch (ex) {} }
-            }
-
-            var timer = setTimeout(function () {
-                finish(false, 'Timed out — no response from ' + url);
-            }, 5000);
-
-            try {
-                ws          = new WebSocket(url);
-                ws.onopen   = function () { finish(true,  'Connected to ' + url); };
-                ws.onerror  = function () { finish(false, 'Connection refused or network error: ' + url); };
-            } catch (ex) {
-                finish(false, 'Invalid URL: ' + ex.message);
-            }
+            apiFetch('/WledTv/test?url=' + encodeURIComponent(url))
+            .then(function (res) {
+                btnTest.disabled    = false;
+                testOut.style.color = (res && res.success) ? '#27ae60' : '#f44336';
+                testOut.textContent = (res && res.body) || (res && res.success ? 'Connected.' : 'Failed.');
+            })
+            .catch(function (err) {
+                btnTest.disabled    = false;
+                testOut.style.color = '#f44336';
+                testOut.textContent = 'Test failed: ' + err.message;
+            });
         });
     });
 })();

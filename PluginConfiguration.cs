@@ -19,12 +19,6 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Which way the strip runs from the start point.</summary>
     public LedLoopDirection Direction { get; set; } = LedLoopDirection.CounterClockwise;
 
-    /// <summary>How deep into the frame (as a fraction 0–1) to sample pixels from each edge.</summary>
-    public double SampleDepth { get; set; } = 0.08;
-
-    /// <summary>Milliseconds between successive colour updates (100 = 10 fps).</summary>
-    public int UpdateIntervalMs { get; set; } = 100;
-
     /// <summary>Master brightness sent to WLED (0–255).</summary>
     public int Brightness { get; set; } = 128;
 
@@ -32,25 +26,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Jellyfin device ID that should run the edge-lighting script.
-    /// Empty string means "all devices" (the original behaviour).
+    /// Jellyfin device ID whose playback drives the LED strip.  The server samples
+    /// only this device's video, so the extra decode is not incurred for anyone
+    /// else.  Empty string means "any device".
     /// </summary>
     public string DeviceId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// How the plugin captures video frames from the browser.
-    /// 0 = Canvas 2D (default). 1 = WebGL (for hardware-overlay platforms like WebOS).
-    /// 2 = Media Stream (MediaStreamTrackProcessor; reads decoded frames directly,
-    /// for platforms like WebOS 26 where even WebGL cannot read the overlay surface).
-    /// </summary>
-    public int CaptureMethod { get; set; } = 0;
-
-    /// <summary>
-    /// When true, enable diagnostics: an on-screen timing overlay on the playing
-    /// device, and (when connected to wled-ambilight-mock) diagnostic log
-    /// messages streamed back over the WebSocket.  Leave off in normal use.
-    /// </summary>
-    public bool DebugMode { get; set; } = false;
 
     /// <summary>
     /// When true, colour updates are split into 54-LED batches to stay within the

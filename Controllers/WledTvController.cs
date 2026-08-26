@@ -23,35 +23,6 @@ public class WledTvController : ControllerBase
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
-    // ── Config endpoint (read by the injected script) ─────────────────────────
-
-    /// <summary>
-    /// Returns the configuration the client-side script needs.
-    /// The script uses wledWsUrl to open a WebSocket directly to WLED.
-    /// </summary>
-    [HttpGet("config")]
-    [Authorize]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<object> GetConfig() =>
-        Ok(new
-        {
-            enabled            = Config.Enabled,
-            wledWsUrl          = Config.WledWsUrl,
-            horizontalLedCount = Config.HorizontalLedCount,
-            verticalLedCount   = Config.VerticalLedCount,
-            loopStart          = (int)Config.LoopStart,
-            direction          = (int)Config.Direction,
-            sampleDepth        = Config.SampleDepth,
-            updateIntervalMs   = Config.UpdateIntervalMs,
-            brightness         = Config.Brightness,
-            deviceId           = Config.DeviceId,
-            captureMethod      = Config.CaptureMethod,
-            debugMode          = Config.DebugMode,
-            batchUpdates       = Config.BatchUpdates,
-            detectLetterbox    = Config.DetectLetterbox,
-            detectPillarbox    = Config.DetectPillarbox
-        });
-
     // ── Admin settings endpoints (used by the config page) ───────────────────
 
     [HttpGet("settings")]
@@ -66,12 +37,8 @@ public class WledTvController : ControllerBase
             verticalLedCount   = Config.VerticalLedCount,
             loopStart          = (int)Config.LoopStart,
             direction          = (int)Config.Direction,
-            sampleDepth        = Config.SampleDepth,
-            updateIntervalMs   = Config.UpdateIntervalMs,
             brightness         = Config.Brightness,
             deviceId           = Config.DeviceId,
-            captureMethod      = Config.CaptureMethod,
-            debugMode          = Config.DebugMode,
             batchUpdates       = Config.BatchUpdates,
             detectLetterbox    = Config.DetectLetterbox,
             detectPillarbox    = Config.DetectPillarbox
@@ -89,12 +56,8 @@ public class WledTvController : ControllerBase
         cfg.VerticalLedCount   = Math.Max(1, s.VerticalLedCount);
         cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
         cfg.Direction          = (LedLoopDirection)Math.Clamp(s.Direction, 0, 1);
-        cfg.SampleDepth        = Math.Clamp(s.SampleDepth, 0.01, 0.5);
-        cfg.UpdateIntervalMs   = Math.Max(40, s.UpdateIntervalMs);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
         cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
-        cfg.CaptureMethod      = Math.Clamp(s.CaptureMethod, 0, 2);
-        cfg.DebugMode          = s.DebugMode;
         cfg.BatchUpdates       = s.BatchUpdates;
         cfg.DetectLetterbox    = s.DetectLetterbox;
         cfg.DetectPillarbox    = s.DetectPillarbox;
@@ -105,19 +68,21 @@ public class WledTvController : ControllerBase
     // ── Connectivity test ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Attempts a WebSocket handshake from the server to the configured URL.
-    /// Confirms the WLED device is reachable on the network.
+    /// Attempts a WebSocket handshake from the SERVER to the given URL (or the
+    /// saved one if none is supplied).  This mirrors the runtime path — the server
+    /// is what talks to WLED — so it is the meaningful reachability check.
     /// </summary>
     [HttpGet("test")]
     [Authorize(Policy = "RequiresElevation")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<object>> TestConnection()
+    public async Task<ActionResult<object>> TestConnection([FromQuery] string? url)
     {
+        var target = string.IsNullOrWhiteSpace(url) ? Config.WledWsUrl : url.Trim();
         try
         {
             using var ws  = new ClientWebSocket();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await ws.ConnectAsync(new Uri(Config.WledWsUrl), cts.Token).ConfigureAwait(false);
+            await ws.ConnectAsync(new Uri(target), cts.Token).ConfigureAwait(false);
             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None)
                     .ConfigureAwait(false);
             return Ok(new { success = true, body = "WebSocket connection successful." });
@@ -137,12 +102,8 @@ public class SettingsPayload
     public int    VerticalLedCount   { get; set; } = 18;
     public int    LoopStart          { get; set; }
     public int    Direction          { get; set; } = 1;
-    public double SampleDepth        { get; set; } = 0.08;
-    public int    UpdateIntervalMs   { get; set; } = 100;
     public int    Brightness         { get; set; } = 128;
     public string DeviceId           { get; set; } = string.Empty;
-    public int    CaptureMethod      { get; set; } = 0;
-    public bool   DebugMode          { get; set; } = false;
     public bool   BatchUpdates       { get; set; } = true;
     public bool   DetectLetterbox    { get; set; } = true;
     public bool   DetectPillarbox    { get; set; } = true;
