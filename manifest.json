@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v1.4.2.0\n\n### Fixed\n- **Strip stays dark on WebOS 26** — the WebOS 26 update stopped exposing the decoded video's hardware-overlay surface to WebGL (WebOS 25 still allowed it), so both the Canvas 2D and WebGL samplers read black. The video is now nudged out of the hardware-overlay plane with a near-invisible `brightness(1.001)` filter, routing its frames through a readable compositor buffer. Applied automatically for **both** capture methods — no setting to change.\n\n**Note:** forcing the video out of the overlay means it is composited on the GPU rather than shown on the dedicated overlay plane. On some TVs this can slightly affect playback smoothness or HDR; if you notice that, let us know.",
+        "checksum": "670eca32c67b1ee25075f3fa8adca27e",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.2.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-26T20:24:34Z",
+        "version": "1.4.2.0"
+      },
+      {
         "changelog": "## v1.4.1.0\n\nReworks how letterbox/pillarbox handling maps the LEDs so they follow the picture as it actually appears on the panel.\n\n### Fixed\n- **LEDs now follow the on-screen picture, not the raw video frame.** The capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are never in the captured pixels — the compositor adds them on screen. The video's on-screen rectangle is now derived from the video-vs-panel aspect ratio, and LEDs over a bar stay dark instead of the picture being stretched across the whole strip.\n\n### Toggle behaviour\n- The LEDs over the black bars are **always** dark, regardless of the toggles.\n- **Detect pillarboxing** controls the left/right strips: **on** maps them to the video's side edges (lit); **off** leaves them dark.\n- **Detect letterboxing** controls the top/bottom strips: **on** maps them to the video's top/bottom (lit); **off** leaves them dark.\n- Example — a 4:3 video on a 16:9 TV with pillarbox **off**: the sides stay dark and only the middle of the top/bottom strips light up; with pillarbox **on** the full sides light up too, mapped to the edges of the video.\n\nBars baked into the video file are handled the same way. The WebGL sampler (capture path) is unchanged.",
         "checksum": "d0aba115c4d2b0d2de68b99fab7f87da",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.1.0/Jellyfin.Plugin.WledTv.zip",
