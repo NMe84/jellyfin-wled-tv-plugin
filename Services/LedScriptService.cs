@@ -558,6 +558,22 @@ public class LedScriptService : IHostedService, IDisposable
     } catch (e) { return false; }
   }
 
+  // Forces the video out of the hardware-overlay plane so its frames are
+  // composited into a GPU texture we can actually read.  On WebOS the decoder
+  // renders into an overlay layer the browser cannot read back; WebOS 25 let
+  // WebGL read it anyway, WebOS 26 does not, leaving both samplers black.
+  // A near-invisible brightness filter routes the video through a shader into a
+  // readable compositor buffer.  It is the lightest reliable de-overlay: the
+  // one per-pixel multiply is negligible next to the compositing every de-overlay
+  // trick incurs.  Applied for every capture method.  Idempotent.
+  function ensureReadable(video) {
+    if (!video) return;
+    var f = video.style.filter || '';
+    if (f.indexOf('brightness') === -1) {
+      video.style.filter = f ? (f + ' brightness(1.001)') : 'brightness(1.001)';
+    }
+  }
+
   // Captures the current video frame at 1/4 scale into _framePixels.
   // Canvas 2D path: draws downscaled then reads the whole canvas once.
   // WebGL path: renders to GL canvas and reads back via gl.readPixels —
@@ -839,6 +855,11 @@ public class LedScriptService : IHostedService, IDisposable
       return;
     }
     noVideoTicks = 0;
+
+    // Keep the video out of the hardware-overlay plane so the sampler can read
+    // it (required on WebOS 26, harmless elsewhere).  Applied for every capture
+    // method, as soon as a video element is present.
+    ensureReadable(video);
 
     // Always maintain the WebSocket regardless of video state so we are ready
     // to send as soon as readyState reaches HAVE_CURRENT_DATA (2).
