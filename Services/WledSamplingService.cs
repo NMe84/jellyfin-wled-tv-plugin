@@ -1,9 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -20,17 +20,19 @@ namespace Jellyfin.Plugin.WledTv.Services;
 /// the playing video with the bundled ffmpeg (hardware-accelerated, tone-mapped for
 /// HDR), samples the edges of every frame, and streams the colours to WLED over a
 /// WebSocket.  Only the selected device is sampled, so no extra decode is incurred
-/// for anyone else.  Playback position, pause and seek are followed via the session
-/// events so the LEDs stay matched to what is on screen.
+/// for anyone else.
+///
+/// LED timing is slaved to the TV's reported playback clock rather than free-running
+/// on the decoder: each decoded frame carries its own content timestamp, and a clock
+/// model — re-anchored on every progress event so it cannot drift — decides when to
+/// release it.  A configurable display-latency offset then compensates for the fixed
+/// lag between the TV's playback clock and its panel.
 /// </summary>
 public sealed class WledSamplingService : IHostedService, IDisposable
 {
-    // How far the decoder position may drift from the reported playback position
-    // before we re-seek ffmpeg to resynchronise.  Kept generous so a small, stable
-    // start-up offset never causes constant re-seeking; large jumps (user seeks)
-    // and pause/resume are still caught.  Real-time (-re) decode keeps the steady
-    // state tight without re-seeking.
-    private const double DriftResyncSeconds = 2.0;
+    // A reported position this far from the model is treated as a seek (re-decode);
+    // anything smaller is a small drift and gently folded into the clock model.
+    private const double SeekThresholdSeconds = 1.5;
 
     private readonly ISessionManager _sessions;
     private readonly IMediaEncoder _encoder;
@@ -107,7 +109,7 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         {
             vstream = item.GetMediaStreams()?.FirstOrDefault(s => s.Type == MediaStreamType.Video);
         }
-        catch { /* streams unavailable — fall through with defaults */ }
+        catch { /* streams unavailable */ }
         if (vstream is null)
             return;
 
@@ -131,15 +133,10 @@ public sealed class WledSamplingService : IHostedService, IDisposable
                 return;
             }
 
-            // Same session, playing: resume from pause or resync on drift/seek.
             if (_pipeline.IsPaused)
-            {
-                _pipeline.ResumeAt(posSec);
-            }
-            else if (Math.Abs(posSec - _pipeline.EstimatedPositionSeconds) > DriftResyncSeconds)
-            {
-                _pipeline.ResumeAt(posSec);
-            }
+                _pipeline.Resume(posSec);           // resuming from pause
+            else
+                _pipeline.UpdateClock(posSec, SeekThresholdSeconds); // keep the clock honest
         }
     }
 
@@ -157,9 +154,12 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         double ar = vh > 0 ? (double)vw / vh : 16.0 / 9.0;
         bool hdr = IsHdr(vstream);
 
-        // Sample resolution: at least one pixel per LED on each axis, plus headroom
-        // for the edge-depth sample, bounded for performance.  Proportional to the
-        // video so bar detection / aspect maths stay correct.
+        double fps = 24.0;
+        if (vstream.RealFrameRate is > 0f) fps = vstream.RealFrameRate.Value;
+        else if (vstream.AverageFrameRate is > 0f) fps = vstream.AverageFrameRate.Value;
+
+        // Sample resolution: at least one pixel per LED per axis, plus headroom for
+        // the edge-depth sample, bounded for performance; proportional to the video.
         int sh = Math.Max(Math.Max(vCount, (int)Math.Ceiling(hCount / ar)), 120);
         sh = Math.Min(sh, 480);
         int sw = (int)Math.Round(sh * ar);
@@ -167,16 +167,18 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         if ((sw & 1) == 1) sw++;
         if ((sh & 1) == 1) sh++;
 
+        double delaySec = Math.Max(0, cfg.DisplayLatencyMs) / 1000.0;
+
         var pipeline = new Pipeline(
             _logger, _encoder.EncoderPath, cfg.WledWsUrl,
             hCount, vCount, cfg.LoopStart, cfg.Direction,
             cfg.DetectLetterbox, cfg.DetectPillarbox, cfg.BatchUpdates, cfg.Brightness,
-            path, sw, sh, hdr, (double)hCount / vCount, sessionKey);
+            path, sw, sh, hdr, (double)hCount / vCount, fps, delaySec, sessionKey);
 
         _pipeline = pipeline;
         _logger.LogInformation(
-            "WledTv: sampling '{Item}' on device {Device} at {Pos:0.0}s ({W}x{H}{Hdr})",
-            item.Name, e.DeviceId, posSec, sw, sh, hdr ? ", HDR→SDR" : string.Empty);
+            "WledTv: sampling '{Item}' on device {Device} at {Pos:0.0}s ({W}x{H} @ {Fps:0.##}fps{Hdr}, delay {Delay}ms)",
+            item.Name, e.DeviceId, posSec, sw, sh, fps, hdr ? ", HDR→SDR" : string.Empty, cfg.DisplayLatencyMs);
         pipeline.Start(posSec);
     }
 
@@ -207,41 +209,45 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // ── One playback's decode → sample → send pipeline ────────────────────────
+    // ── One playback's decode → sample → schedule → send pipeline ─────────────
     private sealed class Pipeline
     {
         private readonly ILogger _logger;
         private readonly string _ffmpegPath;
-        private readonly int _hCount, _vCount, _sampleW, _sampleH, _brightness;
+        private readonly int _hCount, _vCount, _sampleW, _sampleH, _brightness, _maxBuffer;
         private readonly LedLoopStart _loopStart;
         private readonly LedLoopDirection _direction;
         private readonly bool _letterbox, _pillarbox, _batch, _hdr;
-        private readonly double _panelAspect;
+        private readonly double _panelAspect, _fps, _delaySec;
         private readonly string _path;
         private readonly WledConnection _wled;
-        private readonly Channel<byte[]> _channel;
         private readonly CancellationTokenSource _life = new();
+
+        // Frame buffer, released on schedule by the sender.
+        private readonly object _bufLock = new();
+        private readonly Queue<FrameItem> _buffer = new();
+
+        // TV clock model.
+        private readonly object _clockLock = new();
+        private double _anchorPos;      // content-seconds at the anchor instant
+        private DateTime _anchorWall;   // wall time of the anchor
+        private bool _paused;
+        private double _pausedModel;    // frozen model value while paused
 
         private Task? _senderTask;
         private Process? _ff;
         private Task? _readTask;
         private CancellationTokenSource? _segCts;
 
-        private double _segStartSec;
-        private DateTime _segStartUtc;
-        private double _pausedSec;
-
         public string SessionKey { get; }
         public bool IsPaused { get; private set; }
-
-        public double EstimatedPositionSeconds =>
-            IsPaused ? _pausedSec : _segStartSec + (DateTime.UtcNow - _segStartUtc).TotalSeconds;
 
         public Pipeline(
             ILogger logger, string ffmpegPath, string wledUrl,
             int hCount, int vCount, LedLoopStart loopStart, LedLoopDirection direction,
             bool letterbox, bool pillarbox, bool batch, int brightness,
-            string path, int sampleW, int sampleH, bool hdr, double panelAspect, string sessionKey)
+            string path, int sampleW, int sampleH, bool hdr, double panelAspect,
+            double fps, double delaySec, string sessionKey)
         {
             _logger = logger;
             _ffmpegPath = ffmpegPath;
@@ -250,18 +256,15 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             _loopStart = loopStart; _direction = direction;
             _letterbox = letterbox; _pillarbox = pillarbox; _batch = batch; _brightness = brightness;
             _path = path; _sampleW = sampleW; _sampleH = sampleH; _hdr = hdr;
-            _panelAspect = panelAspect;
+            _panelAspect = panelAspect; _fps = fps > 0 ? fps : 24.0; _delaySec = delaySec;
             SessionKey = sessionKey;
-            _channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1)
-            {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true,
-                SingleWriter = true
-            });
+            _maxBuffer = Math.Max(60, (int)((delaySec + 5.0) * _fps));
         }
 
         public void Start(double posSec)
         {
+            lock (_clockLock) { _paused = false; _anchorPos = posSec; _anchorWall = DateTime.UtcNow; }
+            IsPaused = false;
             _senderTask = Task.Run(() => SenderLoopAsync(_life.Token));
             StartSegment(posSec);
         }
@@ -269,22 +272,58 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         public void Pause()
         {
             if (IsPaused) return;
-            _pausedSec = EstimatedPositionSeconds;
+            lock (_clockLock)
+            {
+                _pausedModel = _anchorPos + (DateTime.UtcNow - _anchorWall).TotalSeconds;
+                _paused = true;
+            }
             IsPaused = true;
             StopSegment();
+            FlushBuffer();
         }
 
-        public void ResumeAt(double posSec)
+        public void Resume(double posSec)
         {
+            lock (_clockLock) { _paused = false; _anchorPos = posSec; _anchorWall = DateTime.UtcNow; }
             IsPaused = false;
+            FlushBuffer();
             StartSegment(posSec);
+        }
+
+        // Fold the reported position into the clock model.  A big gap is a seek and
+        // triggers a re-decode; a small gap is drift and is eased in gently so the
+        // release schedule never jumps.
+        public void UpdateClock(double posSec, double seekThreshold)
+        {
+            bool reseek = false;
+            lock (_clockLock)
+            {
+                if (_paused) return;
+                double model = _anchorPos + (DateTime.UtcNow - _anchorWall).TotalSeconds;
+                double err = posSec - model;
+                if (Math.Abs(err) > seekThreshold)
+                {
+                    _anchorPos = posSec;
+                    _anchorWall = DateTime.UtcNow;
+                    reseek = true;
+                }
+                else
+                {
+                    _anchorPos = model + 0.25 * err; // ease 25% of the error per update
+                    _anchorWall = DateTime.UtcNow;
+                }
+            }
+            if (reseek)
+            {
+                FlushBuffer();
+                StartSegment(posSec);
+            }
         }
 
         public void Stop()
         {
             try { _life.Cancel(); } catch { /* ignore */ }
             StopSegment();
-            // Turn the strip off and close the socket on a background task.
             Task.Run(async () =>
             {
                 try
@@ -297,26 +336,30 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             });
         }
 
-        private void StartSegment(double posSec)
+        private double TvClockNow()
+        {
+            lock (_clockLock)
+            {
+                return _paused ? _pausedModel : _anchorPos + (DateTime.UtcNow - _anchorWall).TotalSeconds;
+            }
+        }
+
+        private void FlushBuffer()
+        {
+            lock (_bufLock) { _buffer.Clear(); }
+        }
+
+        private void StartSegment(double contentStartSec)
         {
             StopSegment();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
             _segCts = cts;
-            _segStartSec = posSec;
-            _segStartUtc = DateTime.UtcNow;
 
             Process ff;
-            try
-            {
-                ff = LaunchFfmpeg(posSec);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "WledTv: failed to launch ffmpeg");
-                return;
-            }
+            try { ff = LaunchFfmpeg(contentStartSec); }
+            catch (Exception ex) { _logger.LogError(ex, "WledTv: failed to launch ffmpeg"); return; }
             _ff = ff;
-            _readTask = Task.Run(() => ReadLoopAsync(ff, cts.Token));
+            _readTask = Task.Run(() => ReadLoopAsync(ff, contentStartSec, cts.Token));
         }
 
         private void StopSegment()
@@ -364,7 +407,6 @@ public sealed class WledSamplingService : IHostedService, IDisposable
 
             var ff = new Process { StartInfo = psi };
             ff.Start();
-            // Drain stderr so a full pipe never deadlocks ffmpeg.
             _ = Task.Run(async () =>
             {
                 try { await ff.StandardError.ReadToEndAsync().ConfigureAwait(false); }
@@ -373,11 +415,12 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             return ff;
         }
 
-        private async Task ReadLoopAsync(Process ff, CancellationToken ct)
+        private async Task ReadLoopAsync(Process ff, double contentStartSec, CancellationToken ct)
         {
             int frameSize = _sampleW * _sampleH * 3;
             var buf = new byte[frameSize];
             var stream = ff.StandardOutput.BaseStream;
+            long frameIndex = 0;
             try
             {
                 while (!ct.IsCancellationRequested)
@@ -390,10 +433,18 @@ public sealed class WledSamplingService : IHostedService, IDisposable
                         read += n;
                     }
 
+                    double contentSec = contentStartSec + frameIndex / _fps;
+                    frameIndex++;
+
                     var colors = EdgeSampler.Compute(
                         buf, _sampleW, _sampleH, _hCount, _vCount,
                         _loopStart, _direction, _letterbox, _pillarbox, _panelAspect);
-                    _channel.Writer.TryWrite(colors);
+
+                    lock (_bufLock)
+                    {
+                        _buffer.Enqueue(new FrameItem(contentSec, colors));
+                        while (_buffer.Count > _maxBuffer) _buffer.Dequeue();
+                    }
                 }
             }
             catch (OperationCanceledException) { /* segment stopped */ }
@@ -404,32 +455,64 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                byte[] colors;
-                try { colors = await _channel.Reader.ReadAsync(ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) { break; }
-                catch { break; }
+                double tv = TvClockNow();
+                bool hasDue = false;
+                FrameItem due = default;
+                int waitMs = 200;
 
-                if (!_wled.IsOpen)
+                lock (_bufLock)
                 {
-                    bool ok = await _wled.EnsureConnectedAsync(ct).ConfigureAwait(false);
-                    if (!ok)
+                    // Release every frame whose show-time has arrived, keeping only the
+                    // newest (drop stale ones if we ever fall behind).
+                    while (_buffer.Count > 0 && tv >= _buffer.Peek().ContentSec + _delaySec)
                     {
-                        try { await Task.Delay(1000, ct).ConfigureAwait(false); }
-                        catch { break; }
-                        continue;
+                        due = _buffer.Dequeue();
+                        hasDue = true;
+                    }
+                    if (!hasDue && _buffer.Count > 0)
+                    {
+                        double deltaSec = (_buffer.Peek().ContentSec + _delaySec) - tv;
+                        waitMs = (int)Math.Clamp(deltaSec * 1000.0, 2.0, 200.0);
                     }
                 }
 
-                try
+                if (hasDue)
                 {
-                    await _wled.SendColorsAsync(colors, _brightness, _batch, ct).ConfigureAwait(false);
+                    if (!_wled.IsOpen)
+                    {
+                        bool ok = await _wled.EnsureConnectedAsync(ct).ConfigureAwait(false);
+                        if (!ok)
+                        {
+                            try { await Task.Delay(1000, ct).ConfigureAwait(false); } catch { break; }
+                            continue;
+                        }
+                    }
+                    try
+                    {
+                        await _wled.SendColorsAsync(due.Colors, _brightness, _batch, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "WledTv: send failed, will reconnect");
+                        _wled.Dispose();
+                    }
                 }
-                catch (OperationCanceledException) { break; }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogDebug(ex, "WledTv: send failed, will reconnect");
-                    _wled.Dispose();
+                    try { await Task.Delay(waitMs, ct).ConfigureAwait(false); } catch { break; }
                 }
+            }
+        }
+
+        private readonly struct FrameItem
+        {
+            public readonly double ContentSec;
+            public readonly byte[] Colors;
+            public FrameItem(double contentSec, byte[] colors)
+            {
+                ContentSec = contentSec;
+                Colors = colors;
             }
         }
     }

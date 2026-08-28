@@ -38,6 +38,7 @@ public class WledTvController : ControllerBase
             loopStart          = (int)Config.LoopStart,
             direction          = (int)Config.Direction,
             brightness         = Config.Brightness,
+            displayLatencyMs   = Config.DisplayLatencyMs,
             deviceId           = Config.DeviceId,
             batchUpdates       = Config.BatchUpdates,
             detectLetterbox    = Config.DetectLetterbox,
@@ -57,6 +58,7 @@ public class WledTvController : ControllerBase
         cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
         cfg.Direction          = (LedLoopDirection)Math.Clamp(s.Direction, 0, 1);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
+        cfg.DisplayLatencyMs   = Math.Clamp(s.DisplayLatencyMs, 0, 5000);
         cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
         cfg.BatchUpdates       = s.BatchUpdates;
         cfg.DetectLetterbox    = s.DetectLetterbox;
@@ -103,6 +105,7 @@ public class SettingsPayload
     public int    LoopStart          { get; set; }
     public int    Direction          { get; set; } = 1;
     public int    Brightness         { get; set; } = 128;
+    public int    DisplayLatencyMs   { get; set; }
     public string DeviceId           { get; set; } = string.Empty;
     public bool   BatchUpdates       { get; set; } = true;
     public bool   DetectLetterbox    { get; set; } = true;

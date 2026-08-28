@@ -104,6 +104,20 @@
                            style="width:100%;">
                 </div>
 
+                <!-- Sync delay -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="numSyncDelay">Sync delay (ms)</label>
+                    <input type="number" id="numSyncDelay" is="emby-input" class="emby-input"
+                           min="0" max="5000" step="10">
+                    <div class="fieldDescription">
+                        Delays the LEDs to match the picture on screen, compensating for your TV's
+                        display lag (buffering + processing). If the lighting runs <em>ahead</em> of the
+                        video, increase this; if it lags <em>behind</em>, decrease it. Typical smart-TV
+                        values are a few hundred milliseconds up to about a second. Depends on the TV's
+                        picture mode (game/low-latency modes need less). 0 = no delay.
+                    </div>
+                </div>
+
                 <!-- LED count summary -->
                 <p style="margin:.5em 0 1.5em;font-size:.85em;color:#888;">
                     Total LEDs: <strong id="lblTotal">0</strong>
@@ -216,6 +230,7 @@
         var selStart  = document.getElementById('selLoopStart');
         var selDir    = document.getElementById('selDirection');
         var rngBri    = document.getElementById('numBrightness');
+        var numDelay  = document.getElementById('numSyncDelay');
         var lblBri    = document.getElementById('lblBrightness');
         var lblTotal  = document.getElementById('lblTotal');
 
@@ -248,6 +263,7 @@
             selStart.value       = String(cfg.loopStart    || 0);
             selDir.value         = String(cfg.direction    !== undefined ? cfg.direction : 1);
             rngBri.value         = cfg.brightness          || 128;
+            numDelay.value       = cfg.displayLatencyMs    || 0;
             lblBri.textContent          = rngBri.value;
             chkBatchUpdates.checked     = cfg.batchUpdates !== false;
             chkDetectLetterbox.checked  = cfg.detectLetterbox !== false;
@@ -335,6 +351,7 @@
                     loopStart:          parseInt(selStart.value),
                     direction:          parseInt(selDir.value),
                     brightness:         parseInt(rngBri.value),
+                    displayLatencyMs:   parseInt(numDelay.value) || 0,
                     deviceId:           selDevice.value,
                     batchUpdates:       chkBatchUpdates.checked,
                     detectLetterbox:    chkDetectLetterbox.checked,

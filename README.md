@@ -7,7 +7,7 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 - **Server-side sampling** — the Jellyfin server decodes the video and talks to WLED directly. No browser involvement, no JavaScript injection, no client compatibility problems.
 - **Hardware-accelerated & HDR-aware** — decoding uses the server's hardware acceleration; HDR content (HDR10 / HLG) is tone-mapped to SDR so the LED colours match what the TV shows.
 - **Per-device activation** — the server samples only the client you select, so the extra decode is never incurred for other users on the same server.
-- **Frame-synced** — sampling follows the actual playback position, pausing and re-seeking with the player so the LEDs stay matched to the picture.
+- **Frame-synced** — the LED timing is slaved to the TV's reported playback clock (re-anchored continuously so it can't drift), and follows pause and seek. A tunable **sync delay** then lines the LEDs up with the picture, compensating for your TV's display lag.
 - **Letterbox / pillarbox aware** — the LEDs are mapped to where the picture actually sits on the panel; LEDs over black bars stay dark instead of the picture being stretched across the whole strip. Works both for an aspect mismatch between the video and the screen (e.g. a 4:3 video on a 16:9 TV) and for bars baked into the file. Toggled independently for horizontal and vertical bars.
 - **Configurable strip layout** — start position (bottom centre / left / right), direction (clockwise / counter-clockwise), LED counts per edge, and brightness.
 - **Inline connection test** — the Test button opens a WebSocket from the server to the URL you typed, matching the runtime path, before you save.
@@ -37,13 +37,14 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Strip start position | Where LED #0 sits on the physical strip |
 | Strip direction | Which way the strip runs from the start point |
 | Brightness | Master brightness sent to WLED (0–255) |
+| Sync delay (ms) | Delays the LEDs to match the picture, compensating for the TV's display lag. If the lighting runs *ahead* of the video, increase it; if it lags *behind*, decrease it. Typically a few hundred ms up to ~1 s, and depends on the TV's picture mode. 0 = no delay |
 | Update LEDs in batches | Splits each colour frame into 54-LED batches. **Required for ESP8266** and other controllers with limited memory (disabling causes error 9 on those devices). Turn **off** on ESP32 and other controllers with ample heap to send the whole strip in one message per frame |
 | Detect letterboxing | When on, the top/bottom LEDs map to the video's top/bottom edge and light up; when off they stay dark. Either way the LEDs over the bars stay off |
 | Detect pillarboxing | When on, the left/right LEDs map to the video's side edges and light up; when off they stay dark. Either way the LEDs over the bars stay off |
 
 ## How it works
 
-When the selected device starts playing a video, the server launches its bundled ffmpeg to decode the file from the current position (paced to real time, hardware-accelerated, tone-mapped if the source is HDR), scaled down to a small frame sized to your LED counts. Each decoded frame is sampled along the edges — excluding letterbox/pillarbox bars — and the colours are streamed to WLED. Playback position, pause and seek are tracked through Jellyfin's session events so the lighting follows the picture, and the strip is turned off when playback stops.
+When the selected device starts playing a video, the server launches its bundled ffmpeg to decode the file from the current position (paced to real time, hardware-accelerated, tone-mapped if the source is HDR), scaled down to a small frame sized to your LED counts. Each decoded frame is sampled along the edges — excluding letterbox/pillarbox bars — and buffered with its own content timestamp. A clock model, re-anchored on every playback-progress event so it never drifts, releases each frame to WLED at the right moment, offset by the configured **sync delay** to account for the TV's display lag. Pause and seek are tracked through Jellyfin's session events so the lighting follows the picture, and the strip is turned off when playback stops.
 
 ## License
 
