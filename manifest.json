@@ -9,6 +9,14 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v2.0.2.0\n\n### Sync delay is now bidirectional\n- The **Sync delay** setting accepts **negative values** (−5000…5000 ms) and is now a **slider** with a live readout. Positive pushes the LEDs **later**; negative pulls them **earlier**.\n- Under the hood the decoder no longer uses `-re` — it's paced by the read buffer instead, which primes quickly and keeps a bounded read-ahead. That removes the small residual output lag at delay 0 (so 0 is a true baseline) and gives the server already-decoded future frames to release early when you set a negative delay.\n- **Tuning:** if the lighting runs *ahead* of the video, increase the slider; if it lags *behind*, drag it into the negative range.\n\n### Fixed\n- **LEDs sometimes stayed lit after returning to the menu** — the \"off\" message could race the last colour frame on the single-send WebSocket. Stopping now waits for the sender to fully stop before sending off (reconnecting first if needed), so the strip reliably goes dark.",
+        "checksum": "e5d88fe2bb1ae511ba572c0bde766fec",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.2.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-09-03T22:04:47Z",
+        "version": "2.0.2.0"
+      },
+      {
         "changelog": "## v2.0.1.0 — Proper A/V sync\n\nFixes the ambilight drifting out of sync with the picture (usually running early), which previously needed a manual pause/seek to reset.\n\n### What changed\n- **LED timing is now slaved to the TV's playback clock** instead of free-running on the decoder. Each frame carries its own timestamp; a clock model re-anchored on every playback-progress event tracks the reported position and **cannot drift**. Large jumps are treated as seeks and re-decoded; small corrections are eased in so nothing jumps.\n- **New \"Sync delay (ms)\" setting** compensates for your TV's fixed display lag (buffering + processing). If the lighting runs **ahead** of the video, increase it; if it lags **behind**, decrease it. This is now the only sync knob, and it stays put because the drift is gone.\n\n### Tuning\nStart around a few hundred ms and adjust to taste — for the setup that reported ~1 s early, try **~900 ms**. The right value depends on the TV's picture mode (game/low-latency modes need less).",
         "checksum": "033baf72a7dffdb2abcc23e66bfa67e9",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.1.0/Jellyfin.Plugin.WledTv.zip",
