@@ -106,15 +106,17 @@
 
                 <!-- Sync delay -->
                 <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="numSyncDelay">Sync delay (ms)</label>
-                    <input type="number" id="numSyncDelay" is="emby-input" class="emby-input"
-                           min="0" max="5000" step="10">
+                    <label class="inputLabel inputLabelUnfocused" for="numSyncDelay">
+                        Sync delay (<span id="lblSyncDelay">0</span> ms)
+                    </label>
+                    <input type="range" id="numSyncDelay" min="-5000" max="5000" step="25"
+                           style="width:100%;">
                     <div class="fieldDescription">
-                        Delays the LEDs to match the picture on screen, compensating for your TV's
-                        display lag (buffering + processing). If the lighting runs <em>ahead</em> of the
-                        video, increase this; if it lags <em>behind</em>, decrease it. Typical smart-TV
-                        values are a few hundred milliseconds up to about a second. Depends on the TV's
-                        picture mode (game/low-latency modes need less). 0 = no delay.
+                        Shifts the LEDs to line up with the picture, compensating for your TV's display
+                        lag. If the lighting runs <em>ahead</em> of the video, increase this (push the LEDs
+                        later); if it lags <em>behind</em>, decrease it into negative values (pull the LEDs
+                        earlier). Depends on the TV's picture mode — game/low-latency modes need less.
+                        0 = no shift.
                     </div>
                 </div>
 
@@ -232,6 +234,7 @@
         var rngBri    = document.getElementById('numBrightness');
         var numDelay  = document.getElementById('numSyncDelay');
         var lblBri    = document.getElementById('lblBrightness');
+        var lblDelay  = document.getElementById('lblSyncDelay');
         var lblTotal  = document.getElementById('lblTotal');
 
         var currentDeviceId = window.ApiClient ? window.ApiClient.deviceId() : '';
@@ -250,6 +253,7 @@
 
         // ── Live label bindings ───────────────────────────────────────────────
         rngBri.addEventListener('input', function () { lblBri.textContent = rngBri.value; });
+        numDelay.addEventListener('input', function () { lblDelay.textContent = numDelay.value; });
         numH.addEventListener('input', updateSummary);
         numV.addEventListener('input', updateSummary);
 
@@ -264,6 +268,7 @@
             selDir.value         = String(cfg.direction    !== undefined ? cfg.direction : 1);
             rngBri.value         = cfg.brightness          || 128;
             numDelay.value       = cfg.displayLatencyMs    || 0;
+            lblDelay.textContent        = numDelay.value;
             lblBri.textContent          = rngBri.value;
             chkBatchUpdates.checked     = cfg.batchUpdates !== false;
             chkDetectLetterbox.checked  = cfg.detectLetterbox !== false;

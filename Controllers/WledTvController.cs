@@ -58,7 +58,7 @@ public class WledTvController : ControllerBase
         cfg.LoopStart          = (LedLoopStart)Math.Clamp(s.LoopStart, 0, 2);
         cfg.Direction          = (LedLoopDirection)Math.Clamp(s.Direction, 0, 1);
         cfg.Brightness         = Math.Clamp(s.Brightness, 0, 255);
-        cfg.DisplayLatencyMs   = Math.Clamp(s.DisplayLatencyMs, 0, 5000);
+        cfg.DisplayLatencyMs   = Math.Clamp(s.DisplayLatencyMs, -5000, 5000);
         cfg.DeviceId           = s.DeviceId?.Trim() ?? string.Empty;
         cfg.BatchUpdates       = s.BatchUpdates;
         cfg.DetectLetterbox    = s.DetectLetterbox;

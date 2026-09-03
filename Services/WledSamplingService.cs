@@ -167,7 +167,7 @@ public sealed class WledSamplingService : IHostedService, IDisposable
         if ((sw & 1) == 1) sw++;
         if ((sh & 1) == 1) sh++;
 
-        double delaySec = Math.Max(0, cfg.DisplayLatencyMs) / 1000.0;
+        double delaySec = cfg.DisplayLatencyMs / 1000.0;
 
         var pipeline = new Pipeline(
             _logger, _encoder.EncoderPath, cfg.WledWsUrl,
@@ -258,7 +258,11 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             _path = path; _sampleW = sampleW; _sampleH = sampleH; _hdr = hdr;
             _panelAspect = panelAspect; _fps = fps > 0 ? fps : 24.0; _delaySec = delaySec;
             SessionKey = sessionKey;
-            _maxBuffer = Math.Max(60, (int)((delaySec + 5.0) * _fps));
+            // Read-ahead buffer: ~1s of priming margin plus whatever lead a negative
+            // delay needs (the server must have already decoded frames it releases
+            // early).  Colours are tiny, so even a few seconds is a few hundred KB.
+            double aheadSec = 1.0 + Math.Max(0.0, -delaySec);
+            _maxBuffer = Math.Max(30, (int)Math.Ceiling(aheadSec * _fps) + 4);
         }
 
         public void Start(double posSec)
@@ -326,9 +330,17 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             StopSegment();
             Task.Run(async () =>
             {
+                // Wait for the sender loop to fully stop before sending "off": a
+                // WebSocket permits only one in-flight send, so a colour frame racing
+                // the off message would otherwise win and leave the strip lit.
+                try { if (_senderTask != null) await _senderTask.ConfigureAwait(false); }
+                catch { /* ignore */ }
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    // Fresh token — _life is already cancelled.  Reconnect if the
+                    // sender had dropped the socket, so the off always lands.
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    if (!_wled.IsOpen) await _wled.EnsureConnectedAsync(cts.Token).ConfigureAwait(false);
                     await _wled.SendOffAsync(cts.Token).ConfigureAwait(false);
                 }
                 catch { /* best effort */ }
@@ -396,7 +408,9 @@ public sealed class WledSamplingService : IHostedService, IDisposable
             Arg("-hide_banner");
             Arg("-loglevel"); Arg("error");
             Arg("-hwaccel"); Arg("auto");
-            Arg("-re");
+            // No -re: decode is paced by the read-buffer backpressure below, which
+            // primes fast (no seek-discard throttling) and keeps a bounded read-ahead
+            // so negative sync delays have future frames ready.
             Arg("-ss"); Arg(posSec.ToString("0.###", CultureInfo.InvariantCulture));
             Arg("-i"); Arg(_path);
             Arg("-an"); Arg("-sn");
@@ -440,10 +454,19 @@ public sealed class WledSamplingService : IHostedService, IDisposable
                         buf, _sampleW, _sampleH, _hCount, _vCount,
                         _loopStart, _direction, _letterbox, _pillarbox, _panelAspect);
 
-                    lock (_bufLock)
+                    // Backpressure: wait for room rather than dropping, so ffmpeg is
+                    // paced to real time (the sender drains at the playback rate) and
+                    // the read-ahead stays bounded.
+                    while (!ct.IsCancellationRequested)
                     {
-                        _buffer.Enqueue(new FrameItem(contentSec, colors));
-                        while (_buffer.Count > _maxBuffer) _buffer.Dequeue();
+                        bool queued;
+                        lock (_bufLock)
+                        {
+                            queued = _buffer.Count < _maxBuffer;
+                            if (queued) _buffer.Enqueue(new FrameItem(contentSec, colors));
+                        }
+                        if (queued) break;
+                        await Task.Delay(8, ct).ConfigureAwait(false);
                     }
                 }
             }

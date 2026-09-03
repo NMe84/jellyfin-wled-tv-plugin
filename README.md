@@ -37,7 +37,7 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 | Strip start position | Where LED #0 sits on the physical strip |
 | Strip direction | Which way the strip runs from the start point |
 | Brightness | Master brightness sent to WLED (0–255) |
-| Sync delay (ms) | Delays the LEDs to match the picture, compensating for the TV's display lag. If the lighting runs *ahead* of the video, increase it; if it lags *behind*, decrease it. Typically a few hundred ms up to ~1 s, and depends on the TV's picture mode. 0 = no delay |
+| Sync delay (ms) | Shifts the LEDs to match the picture, compensating for the TV's display lag. Range −5000…5000. If the lighting runs *ahead* of the video, increase it (LEDs later); if it lags *behind*, decrease it into negative values (LEDs earlier — the server decodes further ahead). Depends on the TV's picture mode. 0 = no shift |
 | Update LEDs in batches | Splits each colour frame into 54-LED batches. **Required for ESP8266** and other controllers with limited memory (disabling causes error 9 on those devices). Turn **off** on ESP32 and other controllers with ample heap to send the whole strip in one message per frame |
 | Detect letterboxing | When on, the top/bottom LEDs map to the video's top/bottom edge and light up; when off they stay dark. Either way the LEDs over the bars stay off |
 | Detect pillarboxing | When on, the left/right LEDs map to the video's side edges and light up; when off they stay dark. Either way the LEDs over the bars stay off |

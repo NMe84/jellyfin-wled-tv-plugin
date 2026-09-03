@@ -23,10 +23,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public int Brightness { get; set; } = 128;
 
     /// <summary>
-    /// Milliseconds to delay the LED output so it lines up with the picture on
-    /// screen.  Compensates for the fixed lag between the TV's playback clock and
-    /// its panel (buffering + display processing).  Tune per TV/picture-mode; a
-    /// larger value pushes the LEDs later.  0 = no compensation.
+    /// Milliseconds to shift the LED output so it lines up with the picture on
+    /// screen.  Positive pushes the LEDs later (compensating for TV display lag);
+    /// negative pulls them earlier (the server decodes further ahead).  Tune per
+    /// TV/picture-mode.  0 = no shift.  Range −5000…5000.
     /// </summary>
     public int DisplayLatencyMs { get; set; } = 0;
 
