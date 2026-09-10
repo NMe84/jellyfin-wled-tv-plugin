@@ -9,6 +9,22 @@
     "owner": "nme84",
     "versions": [
       {
+        "changelog": "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
+        "checksum": "492fe41df693fdee3173c9050262a9b4",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf12.zip",
+        "targetAbi": "12.0.0.0",
+        "timestamp": "2026-09-10T22:16:34Z",
+        "version": "2.1.0.12"
+      },
+      {
+        "changelog": "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
+        "checksum": "b418bc6b2bfc7e55d50a9794f0a0356a",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf10.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-09-10T22:16:34Z",
+        "version": "2.1.0.10"
+      },
+      {
         "changelog": "## v2.1.0.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations from a single version.\n\n### Added\n- **Jellyfin 12 support.** Every release now produces two builds:\n  - `Jellyfin.Plugin.WledTv-jf10.zip` \u2014 .NET 9, for Jellyfin **10.11.9+**\n  - `Jellyfin.Plugin.WledTv-jf12.zip` \u2014 .NET 10, for Jellyfin **12**\n- The plugin catalogue lists both, and **Jellyfin installs the right one automatically** \u2014 nothing to choose.\n\nNo functional changes to edge lighting; this is a compatibility release.",
         "checksum": "a119c70c82673e8c314991e1109490c9",
         "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0.0/Jellyfin.Plugin.WledTv-jf12.zip",
