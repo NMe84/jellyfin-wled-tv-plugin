@@ -1,7 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!--
+      Which Jellyfin generation to build against.  Jellyfin 12 bumped the runtime,
+      so the target framework follows the Jellyfin version:
+        JellyfinVersion=10.11.x  ->  net9.0   (Jellyfin 10.x)
+        JellyfinVersion=12.x     ->  net10.0  (Jellyfin 12)
+      Build a specific variant with:  dotnet build -p:JellyfinVersion=12.0.0
+    -->
+    <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">10.11.10</JellyfinVersion>
+    <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.'))">net9.0</TargetFramework>
+    <TargetFramework Condition="$(JellyfinVersion.StartsWith('12.'))">net10.0</TargetFramework>
+
     <RootNamespace>Jellyfin.Plugin.WledTv</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.WledTv</AssemblyName>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -11,9 +21,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.10" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Model"      Version="10.11.10" ExcludeAssets="runtime" />
-    <PackageReference Include="Newtonsoft.Json"     Version="13.0.3"   ExcludeAssets="runtime" />
+    <!-- ExcludeAssets="runtime" so the plugin never ships its own copies of the
+         Jellyfin assemblies (it would fail to load). -->
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model"      Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
