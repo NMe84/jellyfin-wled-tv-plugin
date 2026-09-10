@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write   # required to upload assets and push to gh-pages
 
+env:
+  DLL: Jellyfin.Plugin.WledTv
+  GUID: a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1
+
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -15,7 +19,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: |
+            9.0.x
+            10.0.x
 
       - name: Extract version from build.yaml
         id: ver
@@ -24,39 +30,120 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Baking version $VERSION into assembly"
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
+      # One release, two builds: Jellyfin 10.x (net9.0) and Jellyfin 12 (net10.0).
+      - name: Build and package both variants
         run: |
-          dotnet build --configuration Release --no-restore \
-            /p:Version=${{ steps.ver.outputs.version }} \
-            /p:AssemblyVersion=${{ steps.ver.outputs.version }} \
-            /p:FileVersion=${{ steps.ver.outputs.version }}
-
-      - name: Package
-        run: |
-          cd bin/Release/net9.0
-          zip Jellyfin.Plugin.WledTv.zip Jellyfin.Plugin.WledTv.dll
-          md5sum Jellyfin.Plugin.WledTv.zip | awk '{print $1}' > Jellyfin.Plugin.WledTv.zip.md5
+          set -euo pipefail
+          mkdir -p dist
+          build() {
+            jf="$1"; tfm="$2"; suffix="$3"
+            echo "::group::Build Jellyfin $jf ($tfm)"
+            dotnet build --configuration Release -p:JellyfinVersion="$jf" \
+              -p:Version=${{ steps.ver.outputs.version }} \
+              -p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+              -p:FileVersion=${{ steps.ver.outputs.version }}
+            (cd "bin/Release/$tfm" && zip -q "$GITHUB_WORKSPACE/dist/${DLL}-${suffix}.zip" "${DLL}.dll")
+            (cd dist && md5sum "${DLL}-${suffix}.zip" | awk '{print $1}' > "${DLL}-${suffix}.zip.md5")
+            echo "::endgroup::"
+          }
+          build 10.11.10 net9.0  jf10
+          build 12.0.0   net10.0 jf12
+          ls -l dist
 
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.ref_name }}" \
-            "bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip" \
-            "bin/Release/net9.0/Jellyfin.Plugin.WledTv.zip.md5" \
-            "build.yaml"
+          gh release upload "${{ github.ref_name }}" dist/* build.yaml --clobber
 
-      - name: Regenerate manifest
-        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
         with:
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          pagesBranch: gh-pages
-          pagesFile: manifest.json
-          ignorePrereleases: true
+          ref: gh-pages
+          path: pages
+
+      - name: Update manifest (one entry per Jellyfin ABI)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          CHANGELOG="$(gh release view "$TAG" --json body --jq .body)"
+          export CHANGELOG
+          export PNAME="$(grep '^name:' build.yaml | sed 's/^name:[[:space:]]*//; s/^"//; s/"$//')"
+          export PDESC="$(grep '^description:' build.yaml | sed 's/^description:[[:space:]]*//; s/^"//; s/"$//')"
+          export POWNER="$(grep '^owner:' build.yaml | sed 's/^owner:[[:space:]]*//; s/^"//; s/"$//')"
+          export PCATEGORY="$(grep '^category:' build.yaml | sed 's/^category:[[:space:]]*//; s/^"//; s/"$//')"
+          export PIMAGE="$(grep '^imageUrl:' build.yaml | sed 's/^imageUrl:[[:space:]]*//; s/^"//; s/"$//')"
+          python3 - <<'PY'
+          import datetime, hashlib, json, os, pathlib
+
+          version   = os.environ["VERSION"]
+          tag       = os.environ["TAG"]
+          repo      = os.environ["REPO"]
+          guid      = os.environ["GUID"]
+          dll       = os.environ["DLL"]
+          changelog = os.environ.get("CHANGELOG", "") or ""
+
+          # Highest ABI FIRST.  Jellyfin keeps versions whose targetAbi <= server
+          # version, then does a *stable* descending sort by version and installs the
+          # first match.  A Jellyfin 12 server accepts BOTH rows, so if the 10.x row
+          # came first it would install the .NET 9 build and fail to load.
+          targets = [
+              ("12.0.0.0",  f"{dll}-jf12.zip"),
+              ("10.11.9.0", f"{dll}-jf10.zip"),
+          ]
+
+          man = pathlib.Path("pages/manifest.json")
+          data = json.loads(man.read_text()) if man.exists() else []
+
+          entry = next((p for p in data if str(p.get("guid", "")).lower() == guid.lower()), None)
+          if entry is None:
+              entry = {
+                  "category": os.environ.get("PCATEGORY", ""),
+                  "description": os.environ.get("PDESC", ""),
+                  "guid": guid,
+                  "imageUrl": os.environ.get("PIMAGE", ""),
+                  "name": os.environ.get("PNAME", ""),
+                  "overview": os.environ.get("PDESC", ""),
+                  "owner": os.environ.get("POWNER", ""),
+                  "versions": [],
+              }
+              data.append(entry)
+
+          ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+          # Re-releasing the same version replaces its rows rather than duplicating.
+          kept = [v for v in entry.get("versions", []) if v.get("version") != version]
+
+          rows = []
+          for abi, asset in targets:
+              digest = hashlib.md5(pathlib.Path("dist", asset).read_bytes()).hexdigest()
+              rows.append({
+                  "changelog": changelog,
+                  "checksum": digest,
+                  "sourceUrl": f"https://github.com/{repo}/releases/download/{tag}/{asset}",
+                  "targetAbi": abi,
+                  "timestamp": ts,
+                  "version": version,
+              })
+
+          entry["versions"] = rows + kept
+          man.write_text(json.dumps(data, indent=2) + "\n")
+          for r in rows:
+              print(f"added {version} abi={r['targetAbi']} -> {r['sourceUrl']}")
+          PY
+
+      - name: Commit manifest
+        run: |
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git diff --cached --quiet || git commit -m "Add ${{ steps.ver.outputs.version }} (Jellyfin 10.x + 12)"
+          git push
 
       - name: Trigger jellyfin-plugins aggregator
         uses: peter-evans/repository-dispatch@v3

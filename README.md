@@ -14,7 +14,7 @@ A Jellyfin plugin that drives a [WLED](https://kno.wled.ge/) LED strip in real t
 
 ## Requirements
 
-- Jellyfin 10.11 or later
+- Jellyfin **10.11.9+** or **Jellyfin 12** — a single release ships builds for both (the plugin catalogue picks the right one automatically)
 - Hardware video decoding enabled in Jellyfin (Dashboard → Playback) is recommended, especially for 4K content
 - A WLED device reachable from the **Jellyfin server** over WebSocket (`ws://…/ws`)
 
