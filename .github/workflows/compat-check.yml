@@ -1,0 +1,80 @@
+name: Compat Check
+
+# Manual check: does ONE build (net9.0, compiled against Jellyfin 10.11) actually
+# load on both a real Jellyfin 10.11 server and a real Jellyfin 12 server?
+# Jellyfin assemblies are not strong-named, so the runtime does not enforce the
+# referenced version - this proves whether the members we use still bind.
+on:
+  workflow_dispatch:
+
+env:
+  DLL: Jellyfin.Plugin.WledTv
+  GUID: a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1
+  PNAME: WledTv
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build one net9.0 assembly against Jellyfin 10.11
+        run: |
+          dotnet build -c Release -p:JellyfinVersion=10.11.10 \
+            -p:Version=9.9.9.9 -p:AssemblyVersion=9.9.9.9 -p:FileVersion=9.9.9.9
+
+      - name: Stage plugin folder
+        run: |
+          set -eu
+          mkdir -p plug/"$PNAME"
+          cp "bin/Release/net9.0/${DLL}.dll" plug/"$PNAME"/
+          cat > plug/"$PNAME"/meta.json <<JSON
+          {
+            "guid": "${GUID}",
+            "name": "${PNAME}",
+            "overview": "compat check",
+            "description": "compat check",
+            "owner": "nme84",
+            "category": "General",
+            "version": "9.9.9.9",
+            "targetAbi": "10.11.9.0",
+            "framework": "net9.0",
+            "status": "Active",
+            "autoUpdate": false
+          }
+          JSON
+          ls -l plug/"$PNAME"
+
+      - name: Load on Jellyfin 10.11 and Jellyfin 12
+        run: |
+          set +e
+          overall=0
+          for tag in 10.11 12.0; do
+            echo "::group::Jellyfin $tag"
+            rm -rf cfg && mkdir -p cfg/plugins
+            cp -r plug/"$PNAME" cfg/plugins/
+            docker run -d --name "jf$tag" -v "$PWD/cfg:/config" "jellyfin/jellyfin:$tag" >/dev/null 2>&1
+            # wait for startup (plugin loading happens early)
+            for i in $(seq 1 40); do
+              docker logs "jf$tag" 2>&1 | grep -q "Startup complete" && break
+              sleep 5
+            done
+            docker logs "jf$tag" > "log-$tag.txt" 2>&1
+            echo "--- plugin / assembly lines ---"
+            grep -iE "plugin|${DLL}|${PNAME}|assembly" "log-$tag.txt" | grep -viE "pluginsPath|no plugins" | head -30
+            echo "--- failure signals ---"
+            bad=$(grep -icE "failed to load|TypeLoadException|MissingMethod|MissingField|FileNotFoundException|could not load|not supported" "log-$tag.txt")
+            good=$(grep -icE "Loaded plugin" "log-$tag.txt")
+            echo "loaded-plugin lines=$good  failure lines=$bad"
+            if [ "$bad" != "0" ]; then grep -iE "failed to load|TypeLoadException|MissingMethod|MissingField|FileNotFoundException|could not load|not supported" "log-$tag.txt" | head -10; fi
+            if [ "$good" = "0" ] || [ "$bad" != "0" ]; then echo "RESULT $tag: FAIL"; overall=1; else echo "RESULT $tag: PASS"; fi
+            docker rm -f "jf$tag" >/dev/null 2>&1
+            echo "::endgroup::"
+          done
+          echo "=============================="
+          [ "$overall" = "0" ] && echo "SINGLE BUILD WORKS ON BOTH" || echo "SINGLE BUILD DOES NOT WORK ON BOTH"
+          exit 0
