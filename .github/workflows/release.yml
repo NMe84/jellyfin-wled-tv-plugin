@@ -19,35 +19,31 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+          dotnet-version: '9.0.x'
 
-      # build.yaml carries a 3-part base (e.g. 2.1.0).  The 4th component encodes
-      # the Jellyfin major version the build targets: <base>.10 / <base>.12.
-      - name: Extract base version from build.yaml
+      - name: Extract version from build.yaml
         id: ver
         run: |
-          BASE=$(grep '^version:' build.yaml | grep -oP '"[^"]+"' | tr -d '"')
-          echo "base=$BASE" >> $GITHUB_OUTPUT
-          echo "Base version: $BASE  ->  ${BASE}.10 (Jellyfin 10.x), ${BASE}.12 (Jellyfin 12)"
+          VERSION=$(grep '^version:' build.yaml | grep -oP '"[^"]+"' | tr -d '"')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Baking version $VERSION into assembly"
 
-      - name: Build and package both variants
+      # ONE build serves every supported Jellyfin. Compiled net9.0 against the
+      # oldest supported packages (10.11); Jellyfin's assemblies are not
+      # strong-named, so this binds on Jellyfin 12 too (proven by compat-check.yml).
+      - name: Build
+        run: |
+          dotnet build --configuration Release -p:JellyfinVersion=10.11.10 \
+            -p:Version=${{ steps.ver.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+            -p:FileVersion=${{ steps.ver.outputs.version }}
+
+      - name: Package
         run: |
           set -euo pipefail
-          BASE="${{ steps.ver.outputs.base }}"
           mkdir -p dist
-          build() {
-            jf="$1"; tfm="$2"; suffix="$3"; ver="$4"
-            echo "::group::Jellyfin $jf ($tfm) -> $ver"
-            dotnet build --configuration Release -p:JellyfinVersion="$jf" \
-              -p:Version="$ver" -p:AssemblyVersion="$ver" -p:FileVersion="$ver"
-            (cd "bin/Release/$tfm" && zip -q "$GITHUB_WORKSPACE/dist/${DLL}-${suffix}.zip" "${DLL}.dll")
-            (cd dist && md5sum "${DLL}-${suffix}.zip" | awk '{print $1}' > "${DLL}-${suffix}.zip.md5")
-            echo "::endgroup::"
-          }
-          build 10.11.10 net9.0  jf10 "${BASE}.10"
-          build 12.0.0   net10.0 jf12 "${BASE}.12"
+          (cd bin/Release/net9.0 && zip -q "$GITHUB_WORKSPACE/dist/${DLL}.zip" "${DLL}.dll")
+          (cd dist && md5sum "${DLL}.zip" | awk '{print $1}' > "${DLL}.zip.md5")
           ls -l dist
 
       - name: Upload release assets
@@ -62,16 +58,17 @@ jobs:
           ref: gh-pages
           path: pages
 
-      - name: Update manifest (one entry per Jellyfin ABI)
+      - name: Update manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BASE: ${{ steps.ver.outputs.base }}
+          VERSION: ${{ steps.ver.outputs.version }}
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           CHANGELOG="$(gh release view "$TAG" --json body --jq .body)"
           export CHANGELOG
+          export TARGET_ABI="$(grep '^targetAbi:' build.yaml | sed 's/^targetAbi:[[:space:]]*//; s/^"//; s/"$//')"
           export PNAME="$(grep '^name:' build.yaml | sed 's/^name:[[:space:]]*//; s/^"//; s/"$//')"
           export PDESC="$(grep '^description:' build.yaml | sed 's/^description:[[:space:]]*//; s/^"//; s/"$//')"
           export POWNER="$(grep '^owner:' build.yaml | sed 's/^owner:[[:space:]]*//; s/^"//; s/"$//')"
@@ -80,22 +77,13 @@ jobs:
           python3 - <<'PY'
           import datetime, hashlib, json, os, pathlib
 
-          base      = os.environ["BASE"]
+          version   = os.environ["VERSION"]
           tag       = os.environ["TAG"]
           repo      = os.environ["REPO"]
           guid      = os.environ["GUID"]
           dll       = os.environ["DLL"]
+          abi       = os.environ["TARGET_ABI"]
           changelog = os.environ.get("CHANGELOG", "") or ""
-
-          # The 4th version component is the Jellyfin major version this build
-          # targets.  Jellyfin's auto-updater only offers a version STRICTLY
-          # greater than the installed one, so giving the newer Jellyfin a higher
-          # number makes a 10.x -> 12 server upgrade a real update (otherwise the
-          # stale .NET 9 build would be kept and fail to load).  Newest ABI first.
-          targets = [
-              ("12.0.0.0",  f"{dll}-jf12.zip", f"{base}.12"),
-              ("10.11.9.0", f"{dll}-jf10.zip", f"{base}.10"),
-          ]
 
           man = pathlib.Path("pages/manifest.json")
           data = json.loads(man.read_text()) if man.exists() else []
@@ -114,26 +102,22 @@ jobs:
               }
               data.append(entry)
 
-          ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-          new_versions = {v for _, _, v in targets}
-          kept = [v for v in entry.get("versions", []) if v.get("version") not in new_versions]
+          asset = f"{dll}.zip"
+          row = {
+              "changelog": changelog,
+              "checksum": hashlib.md5(pathlib.Path("dist", asset).read_bytes()).hexdigest(),
+              "sourceUrl": f"https://github.com/{repo}/releases/download/{tag}/{asset}",
+              # targetAbi is the OLDEST supported Jellyfin. Jellyfin keeps any row
+              # where targetAbi <= server version, so this one row also serves 12+.
+              "targetAbi": abi,
+              "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "version": version,
+          }
 
-          rows = []
-          for abi, asset, version in targets:
-              digest = hashlib.md5(pathlib.Path("dist", asset).read_bytes()).hexdigest()
-              rows.append({
-                  "changelog": changelog,
-                  "checksum": digest,
-                  "sourceUrl": f"https://github.com/{repo}/releases/download/{tag}/{asset}",
-                  "targetAbi": abi,
-                  "timestamp": ts,
-                  "version": version,
-              })
-
-          entry["versions"] = rows + kept
+          # Re-releasing the same version replaces its row rather than duplicating.
+          entry["versions"] = [row] + [v for v in entry.get("versions", []) if v.get("version") != version]
           man.write_text(json.dumps(data, indent=2) + "\n")
-          for r in rows:
-              print(f"added {r['version']} abi={r['targetAbi']} -> {r['sourceUrl']}")
+          print(f"added {version} abi={abi} -> {row['sourceUrl']}")
           PY
 
       - name: Commit manifest
@@ -142,7 +126,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add manifest.json
-          git diff --cached --quiet || git commit -m "Add ${{ steps.ver.outputs.base }}.10 / ${{ steps.ver.outputs.base }}.12"
+          git diff --cached --quiet || git commit -m "Add ${{ steps.ver.outputs.version }}"
           git push
 
       - name: Trigger jellyfin-plugins aggregator
