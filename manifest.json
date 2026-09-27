@@ -1,68 +1,76 @@
 [
   {
-    "category" : "General",
-    "description" : "Drive a WLED LED strip from video content playing in Jellyfin",
-    "guid" : "a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1",
-    "imageUrl" : "https://raw.githubusercontent.com/NMe84/jellyfin-wled-tv-plugin/master/wledtv.png",
-    "name" : "WLED TV",
-    "overview" : "Server-side edge lighting for WLED. Jellyfin decodes the playing video with its bundled ffmpeg (hardware-accelerated, HDR tone-mapped), samples the edges of each frame, and streams the colours to a WLED strip in real time. No browser involvement, so it works on any client, including smart-TV apps.\n",
-    "owner" : "nme84",
-    "versions" : [
+    "category": "General",
+    "description": "Drive a WLED LED strip from video content playing in Jellyfin",
+    "guid": "a4b5c6d7-e8f9-4a3b-8c7d-e6f5a4b3c2d1",
+    "imageUrl": "https://raw.githubusercontent.com/NMe84/jellyfin-wled-tv-plugin/master/wledtv.png",
+    "name": "WLED TV",
+    "overview": "Server-side edge lighting for WLED. Jellyfin decodes the playing video with its bundled ffmpeg (hardware-accelerated, HDR tone-mapped), samples the edges of each frame, and streams the colours to a WLED strip in real time. No browser involvement, so it works on any client, including smart-TV apps.\n",
+    "owner": "nme84",
+    "versions": [
       {
-        "changelog" : "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
-        "checksum" : "492fe41df693fdee3173c9050262a9b4",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf12.zip",
-        "targetAbi" : "12.0.0.0",
-        "timestamp" : "2026-09-10T22:16:34Z",
-        "version" : "2.1.0.12"
+        "changelog": "## v2.2.0.0 \u2014 one build for every Jellyfin\n\nReplaces the split `2.1.0.10` / `2.1.0.12` releases with a **single build that runs on both Jellyfin 10.11.9+ and Jellyfin 12**.\n\n### Changed\n- **No more per-Jellyfin builds.** Verified by loading one .NET 9 build into real Jellyfin 10.11 and Jellyfin 12 containers \u2014 it loads and the plugin's service starts on both. Jellyfin's assemblies aren't strong-named, so the runtime doesn't enforce the referenced version.\n- Back to a plain version number and a single download; the odd `.10`/`.12` suffixes are gone.\n- Whether you're on Jellyfin 10.11 or 12, this shows up as a normal update and installs itself.\n\nNo functional changes to edge lighting.",
+        "checksum": "ced8e59e11b5c795fca8045daced5c9d",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.2.0.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-09-27T13:31:26Z",
+        "version": "2.2.0.0"
       },
       {
-        "changelog" : "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
-        "checksum" : "b418bc6b2bfc7e55d50a9794f0a0356a",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf10.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-09-10T22:16:34Z",
-        "version" : "2.1.0.10"
+        "changelog": "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
+        "checksum": "492fe41df693fdee3173c9050262a9b4",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf12.zip",
+        "targetAbi": "12.0.0.0",
+        "timestamp": "2026-09-10T22:16:34Z",
+        "version": "2.1.0.12"
       },
       {
-        "changelog" : "## v2.0.2.0\n\n### Sync delay is now bidirectional\n- The **Sync delay** setting accepts **negative values** (\u22125000\u20265000 ms) and is now a **slider** with a live readout. Positive pushes the LEDs **later**; negative pulls them **earlier**.\n- Under the hood the decoder no longer uses `-re` \u2014 it's paced by the read buffer instead, which primes quickly and keeps a bounded read-ahead. That removes the small residual output lag at delay 0 (so 0 is a true baseline) and gives the server already-decoded future frames to release early when you set a negative delay.\n- **Tuning:** if the lighting runs *ahead* of the video, increase the slider; if it lags *behind*, drag it into the negative range.\n\n### Fixed\n- **LEDs sometimes stayed lit after returning to the menu** \u2014 the \"off\" message could race the last colour frame on the single-send WebSocket. Stopping now waits for the sender to fully stop before sending off (reconnecting first if needed), so the strip reliably goes dark.",
-        "checksum" : "e5d88fe2bb1ae511ba572c0bde766fec",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.2.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-09-03T22:04:47Z",
-        "version" : "2.0.2.0"
+        "changelog": "## v2.1.0 \u2014 Jellyfin 12 support\n\nJellyfin 12 moved the server to **.NET 10**, which stops plugins built for Jellyfin 10.x from loading. This release ships builds for **both** generations.\n\n### Added\n- **Jellyfin 12 support.** One release, two builds \u2014 the catalogue offers the right one for your server automatically:\n\n  | Your Jellyfin | Version you'll see | Build |\n  |---|---|---|\n  | 10.11.9+ | `2.1.0.10` | .NET 9 |\n  | 12 | `2.1.0.12` | .NET 10 |\n\n- The **4th version component is the Jellyfin major version** the build targets. This is deliberate: Jellyfin only offers an update when the catalogue version is *higher* than what's installed, so upgrading your server from 10.x to 12 now shows `2.1.0.12` as a normal plugin update and installs it automatically. Without it you'd silently keep the .NET 9 build and the plugin would fail to load.\n\nNo functional changes to edge lighting; this is a compatibility release.",
+        "checksum": "b418bc6b2bfc7e55d50a9794f0a0356a",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.1.0/Jellyfin.Plugin.WledTv-jf10.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-09-10T22:16:34Z",
+        "version": "2.1.0.10"
       },
       {
-        "changelog" : "## v2.0.1.0 \u2014 Proper A/V sync\n\nFixes the ambilight drifting out of sync with the picture (usually running early), which previously needed a manual pause/seek to reset.\n\n### What changed\n- **LED timing is now slaved to the TV's playback clock** instead of free-running on the decoder. Each frame carries its own timestamp; a clock model re-anchored on every playback-progress event tracks the reported position and **cannot drift**. Large jumps are treated as seeks and re-decoded; small corrections are eased in so nothing jumps.\n- **New \"Sync delay (ms)\" setting** compensates for your TV's fixed display lag (buffering + processing). If the lighting runs **ahead** of the video, increase it; if it lags **behind**, decrease it. This is now the only sync knob, and it stays put because the drift is gone.\n\n### Tuning\nStart around a few hundred ms and adjust to taste \u2014 for the setup that reported ~1 s early, try **~900 ms**. The right value depends on the TV's picture mode (game/low-latency modes need less).",
-        "checksum" : "033baf72a7dffdb2abcc23e66bfa67e9",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.1.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-08-28T10:52:46Z",
-        "version" : "2.0.1.0"
+        "changelog": "## v2.0.2.0\n\n### Sync delay is now bidirectional\n- The **Sync delay** setting accepts **negative values** (\u22125000\u20265000 ms) and is now a **slider** with a live readout. Positive pushes the LEDs **later**; negative pulls them **earlier**.\n- Under the hood the decoder no longer uses `-re` \u2014 it's paced by the read buffer instead, which primes quickly and keeps a bounded read-ahead. That removes the small residual output lag at delay 0 (so 0 is a true baseline) and gives the server already-decoded future frames to release early when you set a negative delay.\n- **Tuning:** if the lighting runs *ahead* of the video, increase the slider; if it lags *behind*, drag it into the negative range.\n\n### Fixed\n- **LEDs sometimes stayed lit after returning to the menu** \u2014 the \"off\" message could race the last colour frame on the single-send WebSocket. Stopping now waits for the sender to fully stop before sending off (reconnecting first if needed), so the strip reliably goes dark.",
+        "checksum": "e5d88fe2bb1ae511ba572c0bde766fec",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.2.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-09-03T22:04:47Z",
+        "version": "2.0.2.0"
       },
       {
-        "changelog" : "## v2.0.0.0 \u2014 Server-side edge lighting\n\nA ground-up rewrite. Sampling now happens **on the Jellyfin server** instead of in the browser, so it works on **any client** \u2014 including smart-TV apps (LG WebOS 26, etc.) where the browser can no longer read the video surface.\n\n### How it works now\n- When the selected device plays a video, the server decodes it with its **bundled ffmpeg** (`-hwaccel auto`, paced to real time), samples the edges of each frame, and streams the colours to WLED over a WebSocket.\n- **Only the selected device is sampled** \u2014 no extra decode is incurred for anyone else on the server.\n- **HDR** (HDR10 / HLG) content is **tone-mapped to SDR** so the LED colours match the screen.\n- Playback **position, pause and seek** are followed via Jellyfin's session events so the lighting stays matched to the picture; the strip turns off when playback stops.\n- The letterbox/pillarbox and panel-aspect handling from before is preserved.\n\n### Removed / changed settings\n- **Removed:** *Sample depth* (now a fixed 1.5% inset), *Update interval* (one update per decoded frame, flow-controlled), *Video capture method* (no client capture anymore), and *Debug mode*.\n- **Kept:** device, WLED URL, LED counts, start position, direction, brightness, batch updates, and the two letterbox/pillarbox toggles.\n- The **Test** button now checks reachability from the **server** to WLED (the real runtime path).\n- The **JavaScript Injector** plugin is **no longer required**.\n\n### Requirements\n- WLED must be reachable from the **Jellyfin server** (not just the browser).\n- Hardware decoding enabled in Jellyfin is recommended, especially for 4K.",
-        "checksum" : "d0276b27f1d56098d31257b523723ba4",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.0.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-08-26T21:37:01Z",
-        "version" : "2.0.0.0"
+        "changelog": "## v2.0.1.0 \u2014 Proper A/V sync\n\nFixes the ambilight drifting out of sync with the picture (usually running early), which previously needed a manual pause/seek to reset.\n\n### What changed\n- **LED timing is now slaved to the TV's playback clock** instead of free-running on the decoder. Each frame carries its own timestamp; a clock model re-anchored on every playback-progress event tracks the reported position and **cannot drift**. Large jumps are treated as seeks and re-decoded; small corrections are eased in so nothing jumps.\n- **New \"Sync delay (ms)\" setting** compensates for your TV's fixed display lag (buffering + processing). If the lighting runs **ahead** of the video, increase it; if it lags **behind**, decrease it. This is now the only sync knob, and it stays put because the drift is gone.\n\n### Tuning\nStart around a few hundred ms and adjust to taste \u2014 for the setup that reported ~1 s early, try **~900 ms**. The right value depends on the TV's picture mode (game/low-latency modes need less).",
+        "checksum": "033baf72a7dffdb2abcc23e66bfa67e9",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-28T10:52:46Z",
+        "version": "2.0.1.0"
       },
       {
-        "changelog" : "## v1.4.1.0\n\nReworks how letterbox/pillarbox handling maps the LEDs so they follow the picture as it actually appears on the panel.\n\n### Fixed\n- **LEDs now follow the on-screen picture, not the raw video frame.** The capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are never in the captured pixels \u2014 the compositor adds them on screen. The video's on-screen rectangle is now derived from the video-vs-panel aspect ratio, and LEDs over a bar stay dark instead of the picture being stretched across the whole strip.\n\n### Toggle behaviour\n- The LEDs over the black bars are **always** dark, regardless of the toggles.\n- **Detect pillarboxing** controls the left/right strips: **on** maps them to the video's side edges (lit); **off** leaves them dark.\n- **Detect letterboxing** controls the top/bottom strips: **on** maps them to the video's top/bottom (lit); **off** leaves them dark.\n- Example \u2014 a 4:3 video on a 16:9 TV with pillarbox **off**: the sides stay dark and only the middle of the top/bottom strips light up; with pillarbox **on** the full sides light up too, mapped to the edges of the video.\n\nBars baked into the video file are handled the same way. The WebGL sampler (capture path) is unchanged.",
-        "checksum" : "d0aba115c4d2b0d2de68b99fab7f87da",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.1.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-08-07T12:45:08Z",
-        "version" : "1.4.1.0"
+        "changelog": "## v2.0.0.0 \u2014 Server-side edge lighting\n\nA ground-up rewrite. Sampling now happens **on the Jellyfin server** instead of in the browser, so it works on **any client** \u2014 including smart-TV apps (LG WebOS 26, etc.) where the browser can no longer read the video surface.\n\n### How it works now\n- When the selected device plays a video, the server decodes it with its **bundled ffmpeg** (`-hwaccel auto`, paced to real time), samples the edges of each frame, and streams the colours to WLED over a WebSocket.\n- **Only the selected device is sampled** \u2014 no extra decode is incurred for anyone else on the server.\n- **HDR** (HDR10 / HLG) content is **tone-mapped to SDR** so the LED colours match the screen.\n- Playback **position, pause and seek** are followed via Jellyfin's session events so the lighting stays matched to the picture; the strip turns off when playback stops.\n- The letterbox/pillarbox and panel-aspect handling from before is preserved.\n\n### Removed / changed settings\n- **Removed:** *Sample depth* (now a fixed 1.5% inset), *Update interval* (one update per decoded frame, flow-controlled), *Video capture method* (no client capture anymore), and *Debug mode*.\n- **Kept:** device, WLED URL, LED counts, start position, direction, brightness, batch updates, and the two letterbox/pillarbox toggles.\n- The **Test** button now checks reachability from the **server** to WLED (the real runtime path).\n- The **JavaScript Injector** plugin is **no longer required**.\n\n### Requirements\n- WLED must be reachable from the **Jellyfin server** (not just the browser).\n- Hardware decoding enabled in Jellyfin is recommended, especially for 4K.",
+        "checksum": "d0276b27f1d56098d31257b523723ba4",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v2.0.0.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-26T21:37:01Z",
+        "version": "2.0.0.0"
       },
       {
-        "changelog" : "## v1.4.0.0\n\nReworks letterbox/pillarbox detection to be more accurate and fully optional.\n\n### Changed\n- **Symmetric detection** \u2014 a bar is only detected when it appears on *both* opposing sides (using the smaller of the two). This fixes the case where one merely-dark side of the picture was wrongly detected as a boundary.\n- **Aspect-ratio clamp** \u2014 letterboxing is capped at **21:9** and pillarboxing at **4:3**. Darker regions beyond that are treated as genuine content, not bars.\n- **Content-aligned LEDs** \u2014 LEDs now map to where the picture actually is instead of stretching it across the whole strip. With pillarboxing the top/bottom LEDs light up only above/below the centred content; with letterboxing the side LEDs light up only alongside the content. The bar regions stay dark.\n\n### Added\n- **Detect letterboxing** and **Detect pillarboxing** settings \u2014 each toggles its dimension independently (both on by default).",
-        "checksum" : "7ece9186fec308ac0ca535eeb11e23fb",
-        "sourceUrl" : "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.0.0/Jellyfin.Plugin.WledTv.zip",
-        "targetAbi" : "10.11.9.0",
-        "timestamp" : "2026-08-07T11:41:37Z",
-        "version" : "1.4.0.0"
+        "changelog": "## v1.4.1.0\n\nReworks how letterbox/pillarbox handling maps the LEDs so they follow the picture as it actually appears on the panel.\n\n### Fixed\n- **LEDs now follow the on-screen picture, not the raw video frame.** The capture is the raw decoded video, so the black bars a 4:3 video shows on a 16:9 panel are never in the captured pixels \u2014 the compositor adds them on screen. The video's on-screen rectangle is now derived from the video-vs-panel aspect ratio, and LEDs over a bar stay dark instead of the picture being stretched across the whole strip.\n\n### Toggle behaviour\n- The LEDs over the black bars are **always** dark, regardless of the toggles.\n- **Detect pillarboxing** controls the left/right strips: **on** maps them to the video's side edges (lit); **off** leaves them dark.\n- **Detect letterboxing** controls the top/bottom strips: **on** maps them to the video's top/bottom (lit); **off** leaves them dark.\n- Example \u2014 a 4:3 video on a 16:9 TV with pillarbox **off**: the sides stay dark and only the middle of the top/bottom strips light up; with pillarbox **on** the full sides light up too, mapped to the edges of the video.\n\nBars baked into the video file are handled the same way. The WebGL sampler (capture path) is unchanged.",
+        "checksum": "d0aba115c4d2b0d2de68b99fab7f87da",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.1.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-07T12:45:08Z",
+        "version": "1.4.1.0"
+      },
+      {
+        "changelog": "## v1.4.0.0\n\nReworks letterbox/pillarbox detection to be more accurate and fully optional.\n\n### Changed\n- **Symmetric detection** \u2014 a bar is only detected when it appears on *both* opposing sides (using the smaller of the two). This fixes the case where one merely-dark side of the picture was wrongly detected as a boundary.\n- **Aspect-ratio clamp** \u2014 letterboxing is capped at **21:9** and pillarboxing at **4:3**. Darker regions beyond that are treated as genuine content, not bars.\n- **Content-aligned LEDs** \u2014 LEDs now map to where the picture actually is instead of stretching it across the whole strip. With pillarboxing the top/bottom LEDs light up only above/below the centred content; with letterboxing the side LEDs light up only alongside the content. The bar regions stay dark.\n\n### Added\n- **Detect letterboxing** and **Detect pillarboxing** settings \u2014 each toggles its dimension independently (both on by default).",
+        "checksum": "7ece9186fec308ac0ca535eeb11e23fb",
+        "sourceUrl": "https://github.com/NMe84/jellyfin-wled-tv-plugin/releases/download/v1.4.0.0/Jellyfin.Plugin.WledTv.zip",
+        "targetAbi": "10.11.9.0",
+        "timestamp": "2026-08-07T11:41:37Z",
+        "version": "1.4.0.0"
       }
     ]
   }
